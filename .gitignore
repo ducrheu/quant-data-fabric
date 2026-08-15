@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Packaging/build artifacts
+*.egg-info/
+build/
+dist/
+
+# IDE/editor
+.idea/
+.vscode/
+
+# Local configuration and secrets
+.env
+.env.*
+*.local
+
+# Logs and temporary files
+*.log
+*.tmp
+tmp/
+temp/
+
+# Large generated/model artifacts
+models/
+Models/
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.safetensors

@@ -1,0 +1,18 @@
+[project]
+name = "quant-data-fabric"
+version = "0.1.0"
+description = "A PIT-aware quantitative data platform"
+requires-python = ">=3.11"
+
+dependencies = [
+    "pydantic",
+    "duckdb",
+    "pandas",
+    "pytest"
+]
+
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "src"
+]
