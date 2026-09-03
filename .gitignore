@@ -41,3 +41,6 @@ Models/
 *.onnx
 *.ckpt
 *.safetensors
+
+# DuckDB database files
+*.duckdb
