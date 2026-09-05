@@ -104,7 +104,9 @@ class FinancialRepository:
             WHERE symbol = ?
               AND metric_name = ?
               AND available_time <= ?
-            ORDER BY event_time DESC LIMIT 1
+            ORDER BY event_time DESC,
+                    available_time DESC
+            LIMIT 1
             """,
             [
                 symbol,
