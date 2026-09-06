@@ -184,3 +184,26 @@ def test_pit_tracks_multiple_report_periods(repository):
     )
     assert result is not None
     assert result[2] == 78000000000
+
+def test_get_pit_return_none_when_event_not_available_yet(repository):
+    report_2025 = FinancialRecord(
+        symbol="600519.SH",
+        metric_name="net_income",
+        value=80000000000,
+        event_time=datetime(2025, 12, 31),
+        available_time=datetime(2026, 4, 30),
+        processing_time=datetime(2026, 5, 1),
+        source="tushare",
+        revision_id=1,
+    )
+
+    repository.save(report_2025)
+
+    result = repository.get_pit(
+        "600519.SH",
+        "net_income",
+        datetime(2026, 3, 1),
+        event_time = datetime(2025, 12, 31),
+    )
+
+    assert result is None

@@ -89,9 +89,19 @@ class FinancialRepository:
             symbol: str,
             metric_name: str,
             as_of_time: datetime,
+            event_time: datetime | None = None,
     ):
+        if event_time is None:
+            order_clause = "ORDER BY event_time DESC, available_time DESC"
+            event_filter = ""
+            params = [symbol, metric_name, as_of_time]
+        else:
+            order_clause = "ORDER BY available_time DESC"
+            event_filter = "AND event_time = ?"
+            params = [symbol, metric_name, event_time, as_of_time]
+
         return self.con.execute(
-            """
+            f"""
             SELECT symbol,
                    metric_name,
                    value,
@@ -103,16 +113,12 @@ class FinancialRepository:
             FROM financial_fact
             WHERE symbol = ?
               AND metric_name = ?
+                {event_filter}
               AND available_time <= ?
-            ORDER BY event_time DESC,
-                    available_time DESC
+            {order_clause}
             LIMIT 1
             """,
-            [
-                symbol,
-                metric_name,
-                as_of_time,
-            ],
+            params,
         ).fetchone()
 
     def close(self):
