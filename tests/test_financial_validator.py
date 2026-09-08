@@ -35,3 +35,18 @@ def test_validator_collections_all_errors():
     assert "missing ts_code" in errors
     assert "invalid n_income" in errors
     assert "invalid end_date" in errors
+
+def test_validator_catches_bad_ann_date():
+    raw = RawRecord(
+        source="tushare",
+        raw_data={
+            "ts_code": "600519.SH",
+            "n_income": 80000000000,
+            "end_date": "20251231",
+            "ann_date": "2026/04/30",
+        },
+        ingest_time = datetime(2026, 5, 1),
+    )
+
+    errors = validate_income_raw(raw)
+    assert "invalid ann_date" in errors
