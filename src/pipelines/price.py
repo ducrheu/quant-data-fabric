@@ -8,6 +8,7 @@ from src.validators.price import validate_daily_raw, validate_price_record
 class PriceIngestResult(BaseModel):
     total: int = 0
     saved: int = 0
+    skipped: int = 0
     failed: int = 0
     errors: list[str] = []
 
@@ -47,7 +48,10 @@ class PricePipeline:
                 result.errors.append(f"row {index} (business): {errors}")
                 continue
 
-            self.repository.save(record)
-            result.saved += 1
+            inserted = self.repository.save(record)
+            if inserted:
+                result.saved += 1
+            else:
+                result.skipped += 1
 
         return result

@@ -80,3 +80,25 @@ def test_pipeline_skips_business_error(tmp_path):
     assert result.saved == 1
     assert result.failed == 1
     assert any("(business)" in e for e in result.errors)
+
+def test_pipeline_second_run_skips_duplicates(tmp_path):
+    rows = [
+        GOOD_ROW,
+        {**GOOD_ROW, "trade_date": "20260108"},
+    ]
+    pipeline, repository = make_pipeline(tmp_path, rows)
+
+    first = pipeline.run("600519.SH", "20260101", "20260110")
+    second = pipeline.run("600519.SH", "20260101", "20260110")
+
+    rows_in_db = repository.con.execute(
+        "SELECT COUNT(*) FROM price_daily"
+    ).fetchone()[0]
+
+    repository.close()
+
+    assert first.saved == 2
+    assert second.saved == 0
+    assert second.skipped == 2
+    assert rows_in_db == 2
+

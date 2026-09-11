@@ -69,3 +69,17 @@ def test_price_save_allows_different_days(repository):
     ).fetchone()[0]
 
     assert count == 2
+
+def test_save_returns_inserted_count(repository):
+    record = PriceRecord(
+        symbol="600519.SH",
+        trade_time=datetime(2026, 1, 9),
+        open=1417.0, high=1428.6, low=1416.01, close=1419.1,
+        volume=29847.74, source="tushare",
+    )
+
+    first = repository.save(record)
+    second = repository.save(record)
+
+    assert first == 1
+    assert second == 0

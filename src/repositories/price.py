@@ -25,8 +25,8 @@ class PriceRepository:
         """
     )
 
-    def save(self, record: PriceRecord):
-        self.con.execute(
+    def save(self, record: PriceRecord) -> int:
+        result = self.con.execute(
             """
             INSERT INTO price_daily
                 (symbol, trade_time, open, high, low, close, volume, source)
@@ -44,6 +44,7 @@ class PriceRepository:
                 record.source
             ],
         )
+        return result.fetchone()[0]
 
     def close(self):
         self.con.close()
