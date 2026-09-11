@@ -8,6 +8,7 @@ from src.validators.financial import validate_income_raw
 class IngestResult(BaseModel):
     total: int = 0
     saved: int = 0
+    skipped: int = 0
     failed: int = 0
     errors: list[str] = []
 
@@ -46,7 +47,10 @@ class FinancialPipeline:
                 continue
 
             record = self.normalizer.normalize(raw)
-            self.repository.save(record)
-            result.saved += 1
+            inserted = self.repository.save(record)
+            if inserted:
+                result.saved += 1
+            else:
+                result.skipped += 1
 
         return result

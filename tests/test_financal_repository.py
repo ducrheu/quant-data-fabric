@@ -207,3 +207,21 @@ def test_get_pit_return_none_when_event_not_available_yet(repository):
     )
 
     assert result is None
+
+
+def test_save_returns_inserted_count(repository):
+    record = FinancialRecord(
+        symbol="600519.SH",
+        metric_name="net_income",
+        value=80000000000,
+        event_time=datetime(2025, 12, 31),
+        available_time=datetime(2026, 4, 30),
+        processing_time=datetime(2026, 5, 1),
+        source="tushare",
+        revision_id=1,
+    )
+    first = repository.save(record)
+    second = repository.save(record)
+
+    assert first == 1
+    assert second == 0

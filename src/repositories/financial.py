@@ -59,8 +59,8 @@ class FinancialRepository:
             """
         )
 
-    def save(self, record: FinancialRecord):
-        self.con.execute(
+    def save(self, record: FinancialRecord) -> int:
+        result = self.con.execute(
             """
             INSERT INTO financial_fact(symbol,
                                        metric_name,
@@ -83,6 +83,7 @@ class FinancialRepository:
                 record.revision_id,
             ],
         )
+        return result.fetchone()[0]
 
     def get_pit(
             self,
