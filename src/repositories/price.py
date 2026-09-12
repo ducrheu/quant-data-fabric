@@ -46,5 +46,37 @@ class PriceRepository:
         )
         return result.fetchone()[0]
 
+    def get_range(
+            self,
+            symbol: str,
+            start_time: datetime,
+            end_time: datetime,
+    ) -> list[PriceRecord]:
+        rows = self.con.execute(
+            """
+            SELECT symbol, trade_time, open, high, low, close, volume, source
+            FROM price_daily
+                WHERE symbol = ?
+                AND trade_time >= ?
+                AND trade_time <= ?
+            ORDER BY trade_time ASC
+            """,
+            (symbol, start_time, end_time)
+        ).fetchall()
+
+        return [
+            PriceRecord(
+                symbol = row[0],
+                trade_time = row[1],
+                open = row[2],
+                high = row[3],
+                low = row[4],
+                close = row[5],
+                volume = row[6],
+                source = row[7],
+            )
+            for row in rows
+        ]
+
     def close(self):
         self.con.close()

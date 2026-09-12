@@ -83,3 +83,24 @@ def test_save_returns_inserted_count(repository):
 
     assert first == 1
     assert second == 0
+
+def test_get_range_returns_records_in_ascending_time(repository):
+    for day in (9, 8, 7):
+        repository.save(
+            PriceRecord(
+                symbol = "600519.SH",
+                trade_time = datetime(2026, 1, day),
+                open=1400.0, high=1430.0, low=1390.0, close=1419.1,
+                volume = 29847.74, source = "tushare",
+            )
+        )
+
+    bars = repository.get_range(
+        "600519.SH",
+        datetime(2026, 1, 7),
+        datetime(2026, 1, 10),
+    )
+
+    assert len(bars) == 3
+    assert bars[0].trade_time == datetime(2026, 1, 7)
+    assert bars[2].trade_time == datetime(2026, 1, 9)
