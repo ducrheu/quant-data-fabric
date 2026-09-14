@@ -28,8 +28,8 @@ def main():
     pipeline = PricePipeline(connector, normalizer, repository)
 
     ts_code = "600519.SH"
-    start_date = "20260101"
-    end_date = "20260131"
+    start_date = "20250101"
+    end_date = "20260913"
 
     print("=== Run 1 ===")
     result = pipeline.run(ts_code, start_date, end_date)
