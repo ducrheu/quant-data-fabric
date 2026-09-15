@@ -1,11 +1,12 @@
 from datetime import datetime
 import duckdb
 from src.domain.financial import FinancialRecord
+from src.config import FINANCIAL_DB_PATH
 
 
 class FinancialRepository:
 
-    def __init__(self, db_path: str = "data/quant_data.duckdb"):
+    def __init__(self, db_path: str = FINANCIAL_DB_PATH):
         self.con = duckdb.connect(db_path)
 
         self._create_table()

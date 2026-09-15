@@ -11,3 +11,7 @@ def get_tushare_token() -> str:
             "Create a .env file with TUSHARE_TOKEN=*** token>."
         )
     return token
+
+PRICE_DB_PATH = "data/price.duckdb"
+FACTOR_DB_PATH = "data/factor.duckdb"
+FINANCIAL_DB_PATH = "data/quant_data.duckdb"

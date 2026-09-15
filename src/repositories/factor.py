@@ -3,10 +3,11 @@ from datetime import datetime
 import duckdb
 
 from src.domain.factor import FactorRecord
+from src.config import FACTOR_DB_PATH
 
 class FactorRepository:
 
-    def __init__(self, db_path: str = "data/factor.duckdb"):
+    def __init__(self, db_path: str = FACTOR_DB_PATH):
         self.con = duckdb.connect(db_path)
         self._create_table()
 

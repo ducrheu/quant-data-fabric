@@ -1,9 +1,10 @@
 from datetime import datetime
 import duckdb
 from src.domain.price import PriceRecord
+from src.config import PRICE_DB_PATH
 
 class PriceRepository:
-    def __init__(self, db_path: str = "data/price.duckdb"):
+    def __init__(self, db_path: str = PRICE_DB_PATH):
         self.con = duckdb.connect(db_path)
         self._create_table()
 
