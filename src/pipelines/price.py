@@ -55,3 +55,40 @@ class PricePipeline:
                 result.skipped += 1
 
         return result
+
+    def run_market(self, trade_date: str, symbols: set[str]) -> PriceIngestResult:
+        """摄入某个交易日的全市场日线，只保留池内的票"""
+        result = PriceIngestResult()
+        raw_records = self.connector.fetch_daily_market(trade_date)
+        kept = [
+            raw for raw in raw_records
+            if raw.raw_data.get("ts_code") in symbols
+        ]
+        result.total = len(kept)
+
+        valid_records = []
+        for index, raw in enumerate(kept):
+            errors = validate_daily_raw(raw)
+            if errors:
+                result.failed += 1
+                result.errors.append(
+                    f"{trade_date} {raw.raw_data.get('ts_code')} (format): {errors}"
+                )
+                continue
+
+            record = self.normalizer.normalize(raw)
+            errors = validate_price_record(record)
+            if errors:
+                result.failed += 1
+                result.errors.append(
+                    f"{trade_date} {record.symbol} (business): {errors}"
+                )
+                continue
+
+            valid_records.append(record)
+
+        inserted = self.repository.save_many(valid_records)
+        result.saved = inserted
+        result.skipped = len(valid_records) - inserted
+
+        return result

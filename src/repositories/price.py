@@ -81,3 +81,37 @@ class PriceRepository:
 
     def close(self):
         self.con.close()
+
+    def save_many(self, records: list[PriceRecord]) -> int:
+        """整批原子写入：返回实际插入行数"""
+        if not records:
+            return 0
+
+        self.con.execute("BEGIN TRANSACTION")
+        try:
+            before = self._count()
+            self.con.executemany(
+                """
+                INSERT INTO price_daily
+                    (symbol, trade_time, open, high, low, close, volume, source)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT DO NOTHING
+                """,
+                [
+                    (
+                        r.symbol, r.trade_time, r.open, r.high,
+                        r.low, r.close, r.volume, r.source,
+                    )
+                    for r in records
+                ],
+            )
+            after = self._count()
+            self.con.execute("COMMIT")
+        except Exception:
+            self.con.execute("ROLLBACK")
+            raise
+
+        return after - before
+
+    def _count(self):
+        return self.con.execute("SELECT COUNT(*) FROM price_daily").fetchone()[0]

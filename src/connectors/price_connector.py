@@ -12,7 +12,13 @@ class TusharePriceConnector:
             start_date = start_date,
             end_date = end_date,
         )
+        return self._to_raw_record(df)
 
+    def fetch_daily_market(self, trade_date):
+        df = self.client.daily(trade_date = trade_date)
+        return self._to_raw_record(df)
+
+    def _to_raw_record(self, df):
         records = []
 
         for _, row in df.iterrows():
