@@ -20,6 +20,8 @@ class PriceRepository:
         close DOUBLE NOT NULL,
         volume DOUBLE NOT NULL,
         source VARCHAR NOT NULL,
+        amount DOUBLE,
+        pct_chg DOUBLE,
             
         UNIQUE (symbol, trade_time)
         )
@@ -30,8 +32,8 @@ class PriceRepository:
         result = self.con.execute(
             """
             INSERT INTO price_daily
-                (symbol, trade_time, open, high, low, close, volume, source)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                (symbol, trade_time, open, high, low, close, volume, source, amount, pct_chg)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT DO NOTHING
             """,
             [
@@ -42,7 +44,9 @@ class PriceRepository:
                 record.low,
                 record.close,
                 record.volume,
-                record.source
+                record.source,
+                record.amount,
+                record.pct_chg,
             ],
         )
         return result.fetchone()[0]
@@ -55,7 +59,7 @@ class PriceRepository:
     ) -> list[PriceRecord]:
         rows = self.con.execute(
             """
-            SELECT symbol, trade_time, open, high, low, close, volume, source
+            SELECT symbol, trade_time, open, high, low, close, volume, source, amount, pct_chg
             FROM price_daily
                 WHERE symbol = ?
                 AND trade_time >= ?
@@ -75,6 +79,8 @@ class PriceRepository:
                 close = row[5],
                 volume = row[6],
                 source = row[7],
+                amount = row[8],
+                pct_chg = row[9],
             )
             for row in rows
         ]
@@ -93,14 +99,15 @@ class PriceRepository:
             self.con.executemany(
                 """
                 INSERT INTO price_daily
-                    (symbol, trade_time, open, high, low, close, volume, source)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                    (symbol, trade_time, open, high, low, close, volume, source, amount, pct_chg)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT DO NOTHING
                 """,
                 [
                     (
                         r.symbol, r.trade_time, r.open, r.high,
                         r.low, r.close, r.volume, r.source,
+                        r.amount, r.pct_chg
                     )
                     for r in records
                 ],

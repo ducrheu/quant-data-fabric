@@ -17,6 +17,14 @@ def validate_daily_raw(raw: RawRecord) -> list[str]:
         except (KeyError, TypeError, ValueError):
             errors.append(f"invalid {field}")
 
+    for field in ("amount", "pct_chg"):
+        if field not in data or data[field] is None:
+            continue
+        try:
+            float(data[field])
+        except (TypeError, ValueError):
+            errors.append(f"invalid {field}")
+
     trade_date = data.get("trade_date")
     try:
         datetime.strptime(trade_date, "%Y%m%d")

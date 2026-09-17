@@ -104,3 +104,49 @@ def test_get_range_returns_records_in_ascending_time(repository):
     assert len(bars) == 3
     assert bars[0].trade_time == datetime(2026, 1, 7)
     assert bars[2].trade_time == datetime(2026, 1, 9)
+
+def test_repository_round_trips_optional_fields(tmp_path):
+    repository = PriceRepository(str(tmp_path / "price.duckdb"))
+    repository.save(
+        PriceRecord(
+            symbol="600519.SH",
+            trade_time=datetime(2026, 1, 9),
+            open=1417.0,
+            high=1428.6,
+            low=1416.01,
+            close=1419.1,
+            volume=29847.74,
+            source="tushare",
+            amount=4243865.418,
+            pct_chg=0.4815,
+        )
+    )
+
+    loaded = repository.get_range(
+        "600519.SH", datetime(2026, 1, 1), datetime(2026, 2, 1)
+    )
+    repository.close()
+    assert loaded[0].amount == 4243865.418
+    assert loaded[0].pct_chg == 0.4815
+
+def test_repository_optional_fields_default_to_none(tmp_path):
+    repository = PriceRepository(str(tmp_path / "price.duckdb"))
+    repository.save(
+        PriceRecord(
+            symbol="600519.SH",
+            trade_time=datetime(2026, 1, 9),
+            open=1417.0,
+            high=1428.6,
+            low=1416.01,
+            close=1419.1,
+            volume=29847.74,
+            source="tushare",
+        )
+    )
+    loaded = repository.get_range(
+        "600519.SH", datetime(2026, 1, 1), datetime(2026, 2, 1)
+    )
+    repository.close()
+
+    assert loaded[0].amount is None
+    assert loaded[0].pct_chg is None

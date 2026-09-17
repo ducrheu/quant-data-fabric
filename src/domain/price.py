@@ -18,3 +18,7 @@ class PriceRecord(BaseModel):
     volume: float
 
     source: str
+
+    amount: float | None = None
+
+    pct_chg: float| None = None
