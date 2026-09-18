@@ -8,6 +8,7 @@ import tushare as ts
 
 from src.config import get_tushare_token
 from src.universe import UNIVERSE_PATH, save_universe, select_universe
+from collections import Counter
 
 AS_OF_TRADE_DATE = "20250102"
 SIZE = 300
@@ -19,8 +20,9 @@ def main():
     frame = pro.daily(trade_date=AS_OF_TRADE_DATE)
     codes = [
         code for code in frame["ts_code"].tolist()
-        if code.endswith(".SH") or code.endswith
+        if code.endswith(".SH") or code.endswith(".SZ")
     ]
+    print("by suffix:", dict(Counter(code.split(".")[-1] for code in codes)))
 
     selected = select_universe(codes, SIZE, SEED)
     save_universe(
