@@ -6,6 +6,7 @@ from src.repositories.price import PriceRepository
 from src.validators.price import validate_daily_raw, validate_price_record
 
 class PriceIngestResult(BaseModel):
+    market_rows: int = 0
     total: int = 0
     saved: int = 0
     skipped: int = 0
@@ -60,6 +61,7 @@ class PricePipeline:
         """摄入某个交易日的全市场日线，只保留池内的票"""
         result = PriceIngestResult()
         raw_records = self.connector.fetch_daily_market(trade_date)
+        result.market_rows = len(raw_records)
         kept = [
             raw for raw in raw_records
             if raw.raw_data.get("ts_code") in symbols

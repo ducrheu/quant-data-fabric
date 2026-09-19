@@ -60,6 +60,7 @@ def test_market_run_keeps_only_universe(tmp_path):
     repository.close()
 
     assert first.total == 2
+    assert first.market_rows == 3
     assert first.saved == 2
     assert second.saved == 0
     assert second.skipped == 2
@@ -94,4 +95,5 @@ def test_market_run_handles_empty_day(tmp_path):
 
     assert result.total == 0
     assert result.saved == 0
+    assert result.market_rows == 0
     assert client.calls == ["20260110"]
