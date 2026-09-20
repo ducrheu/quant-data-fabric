@@ -54,7 +54,7 @@ class IngestLogRepository:
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (trade_date, source) DO UPDATE SET
                     status = EXCLUDED.status,
-                    market_rows = EXCLUDED.kept,
+                    market_rows = EXCLUDED.market_rows,
                     kept = EXCLUDED.kept,
                     saved = EXCLUDED.saved,
                     skipped = EXCLUDED.skipped,

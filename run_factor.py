@@ -6,7 +6,13 @@ from datetime import datetime
 from src.pipelines.factor import MomentumFactorPipeline
 from src.repositories.factor import FactorRepository
 from src.repositories.price import PriceRepository
+from src.trading_calendar import load_trading_days
+from src.universe import load_universe
 from src.universe import SYMBOLS
+
+WINDOW = 20
+FACTOR_NAME = "mom_20d"
+PROGRESS_EVERY = 50
 
 def main():
     price_repo = PriceRepository("data/price.duckdb")
@@ -14,38 +20,42 @@ def main():
 
     pipeline = MomentumFactorPipeline(price_repo, factor_repo)
 
-    window = 20
+    symbols = sorted(load_universe())
     start_time = datetime(2025, 1, 1)
-    end_time = datetime(2026, 9, 13)
+    end_time = datetime.strptime(load_trading_days()[-1], "%Y%m%d")
 
-    for symbol in SYMBOLS:
-        result = pipeline.run(symbol, start_time, end_time, window)
+    total = saved = skipped = 0
 
-        # print("=== Factor run ===")
-        print(f"total: {result.total}")
-        print(f"saved: {result.saved}")
-        print(f"skipped: {result.skipped}")
+    for index, symbol in enumerate(symbols, start = 1):
+        result = pipeline.run(symbol, start_time, end_time, WINDOW)
+        total += result.total
+        saved += result.saved
+        skipped += result.skipped
 
-        series = factor_repo.get_series(
-            symbol,
-            f"mom_{window}d",
-            start_time,
-            end_time,
-        )
+        if index % PROGRESS_EVERY == 0:
+            print(f"[{index} / {len(symbols)}] total={total}"
+                  f"saved={saved} skipped={skipped}")
 
-        print(f"=== mom_{window}d ===")
-        print(f"count: {len(series)}")
+    print("=== summary ===")
+    print(f"symbols processed : {index}/{len(symbols)}")
+    print(f"total={total} saved={saved} skipped={skipped}")
+    print(f"total == saved + skipped : {total == saved + skipped}")
 
-        if series:
-            values = [record.value for record in series]
-            print(f"min: {min(values):+.4f}")
-            print(f"max: {max(values):+.4f}")
-            print(f"mean: {statistics.mean(values):+.4f}")
-            print(f"stdev : {statistics.stdev(values):.4f}")
+    stored = {
+        row[0] for row in factor_repo.con.execute(
+            "SELECT DISTINCT symbol FROM factor_daily WHERE factor_name = ?",
+            [FACTOR_NAME],
+        ).fetchall()
+    }
+    rows = factor_repo.con.execute(
+        "SELECT COUNT(*) FROM factor_daily WHERE factor_name = ?",
+        [FACTOR_NAME],
+    ).fetchone()[0]
 
-            print("last 5:")
-            for record in series[-5:]:
-                print(f"  {record.trade_time.date()}  {record.value:+.4f}")
+    print("=== db truth ===")
+    print(f"factor_daily rows={rows} symbols={len(stored)}")
+    missing = sorted(set(symbols) - stored)
+    print(f"universe 里没有因子的票: {len(missing)} 只 {missing[:5]}")
 
     price_repo.close()
     factor_repo.close()
