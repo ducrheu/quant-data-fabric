@@ -10,6 +10,7 @@ with proper tests.
 
 import duckdb
 import pandas as pd
+from src.factors.evaluate import rank_ic, sample_every, t_stat
 from src.config import FACTOR_DB_PATH, PRICE_DB_PATH
 
 PRICE_DB = PRICE_DB_PATH
@@ -62,13 +63,20 @@ def main():
         f"symbols={data['symbol'].nunique()}"
     )
 
-    ic = data.groupby("trade_time").apply(
-        lambda group: group["value"].corr(group["forward_return"], method="spearman")
-    )
+    ic = rank_ic(data)
+
     print("=== IC (rank) ===")
+    print(f"n: {len(ic)}")
     print(f"mean : {ic.mean():+.4f}")
     print(f"std : {ic.std():+.4f}")
     print(f"IC>0 : {(ic > 0).mean():.1%}")
+
+    sampled = sample_every(ic, HORIZON)
+
+    print("=== significance ===")
+    print(f"naive t   (overlap, 不可信) : {t_stat(ic):+.2f}")
+    print(f"non-overlap n={len(sampled)} mean={sampled.mean():+.4f} "
+          f"t={t_stat(sampled):+.2f}")
 
     data = data.copy()
 

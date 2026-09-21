@@ -1,6 +1,5 @@
 """Manual run: compute momentum factors from stored price data."""
 
-import statistics
 from datetime import datetime
 
 from src.pipelines.factor import MomentumFactorPipeline
@@ -8,7 +7,6 @@ from src.repositories.factor import FactorRepository
 from src.repositories.price import PriceRepository
 from src.trading_calendar import load_trading_days
 from src.universe import load_universe
-from src.universe import SYMBOLS
 
 WINDOW = 20
 FACTOR_NAME = "mom_20d"
@@ -33,7 +31,7 @@ def main():
         skipped += result.skipped
 
         if index % PROGRESS_EVERY == 0:
-            print(f"[{index} / {len(symbols)}] total={total}"
+            print(f"[{index} / {len(symbols)}] total={total} "
                   f"saved={saved} skipped={skipped}")
 
     print("=== summary ===")

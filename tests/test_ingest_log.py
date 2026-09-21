@@ -32,7 +32,7 @@ def test_record_upsert_keeps_market_rows(tmp_path):
     repo.record(day, "tushare", "success", market_rows = 5550,
                 kept = 297, saved = 297, skipped = 0, failed = 0)
     repo.record(day, "tushare", "success", market_rows = 5553,
-                kept = 297, saved = 297, skipped = 0, failed = 0)
+                kept = 297, saved = 0, skipped = 297, failed = 0)
 
     result = repo.con.execute(
         "SELECT market_rows, kept FROM ingest_log WHERE trade_date = ? AND source = ?",
