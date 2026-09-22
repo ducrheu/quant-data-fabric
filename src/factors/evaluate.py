@@ -35,3 +35,29 @@ def sample_every(series: pd.Series, step: int) -> pd.Series:
     if step <= 0:
         raise ValueError("step must be greater than 0")
     return series.iloc[::step]
+
+def quantile_returns(
+        data: pd.DataFrame,
+        n_quantiles: int = 5,
+        date_col: str = "trade_time",
+        factor_col: str = "value",
+        return_col: str = "forward_return",
+) -> pd.DataFrame:
+    """每天按因子值切 n_quantiles 组，返回 (交易日 × 组号) 的收益均值表。
+
+        组号 0 = 因子最低，n_quantiles - 1 = 因子最高。
+        先横截面（当天各组）后时间序列（跨天平均），避免天数不均衡造成的权重失真。
+        """
+    if n_quantiles < 2:
+        raise ValueError("n_quantiles must be at least 2")
+
+    buckets = data.groupby(date_col)[factor_col].transform(
+        lambda series: pd.qcut(series.rank(method = "first"), n_quantiles, labels = False)
+    )
+
+    per_date = data.assign(bucket = buckets).groupby([date_col, "bucket"])[return_col].mean()
+    return per_date.unstack()
+
+def long_short_spread(quantiles: pd.DataFrame) -> pd.Series:
+    """最高组 − 最低组的日度价差序列（可交易性的第一近似，毛收益）。"""
+    return quantiles[quantiles.columns[-1]] - quantiles[quantiles.columns[0]]

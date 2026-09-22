@@ -10,7 +10,9 @@ with proper tests.
 
 import duckdb
 import pandas as pd
-from src.factors.evaluate import rank_ic, sample_every, t_stat
+from pandas.core.array_algos import quantile
+
+from src.factors.evaluate import rank_ic, sample_every, t_stat, quantile_returns, long_short_spread
 from src.config import FACTOR_DB_PATH, PRICE_DB_PATH
 
 PRICE_DB = PRICE_DB_PATH
@@ -78,19 +80,20 @@ def main():
     print(f"non-overlap n={len(sampled)} mean={sampled.mean():+.4f} "
           f"t={t_stat(sampled):+.2f}")
 
-    data = data.copy()
-
-    data["bucket"] = data.groupby("trade_time")["value"].transform(
-        lambda series: pd.qcut(series.rank(method="first"), QUANTILES, labels=False)
-    )
-
-    per_date = data.groupby(["trade_time", "bucket"])["forward_return"].mean()
-    means = per_date.groupby(level="bucket").mean()
+    quantiles = quantile_returns(data, QUANTILES)
 
     print("=== quantile mean forward return ===")
-    for bucket, value in means.items():
+    for bucket, value in quantiles.mean().items():
         print(f" Q{int(bucket) + 1}: {value:+.4f}")
-    print(f" Q5-Q1 spread: {means.iloc[-1] - means.iloc[0]:+.4f}")
+
+    spread = long_short_spread(quantiles)
+    sampled_spread = sample_every(spread, HORIZON)
+
+    print("=== long-short spread (Q5 - Q1) ===")
+    print(f"mean : {spread.mean():+.4f}  std: {spread.std():+.4f}")
+    print(f"naive t   (overlap, 不可信) : {t_stat(spread):+.2f}")
+    print(f"non-overlap n={len(sampled_spread)} mean={sampled_spread.mean():+.4f} "
+          f"t={t_stat(sampled_spread):+.2f}")
 
 if __name__ == "__main__":
     main()
