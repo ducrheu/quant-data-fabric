@@ -10,9 +10,7 @@ with proper tests.
 
 import duckdb
 import pandas as pd
-from pandas.core.array_algos import quantile
-
-from src.factors.evaluate import rank_ic, sample_every, t_stat, quantile_returns, long_short_spread
+from src.factors.evaluate import rank_ic, sample_every, t_stat, quantile_returns, long_short_spread, newey_west_t_stat
 from src.config import FACTOR_DB_PATH, PRICE_DB_PATH
 
 PRICE_DB = PRICE_DB_PATH
@@ -20,6 +18,7 @@ FACTOR_DB = FACTOR_DB_PATH
 FACTOR_NAME = "mom_20d"
 HORIZON = 20
 QUANTILES = 5
+MAX_LAG = HORIZON - 1
 
 def load_prices() -> pd.DataFrame:
     con = duckdb.connect(PRICE_DB, read_only = True)
@@ -72,6 +71,7 @@ def main():
     print(f"mean : {ic.mean():+.4f}")
     print(f"std : {ic.std():+.4f}")
     print(f"IC>0 : {(ic > 0).mean():.1%}")
+    
 
     sampled = sample_every(ic, HORIZON)
 
@@ -79,6 +79,10 @@ def main():
     print(f"naive t   (overlap, 不可信) : {t_stat(ic):+.2f}")
     print(f"non-overlap n={len(sampled)} mean={sampled.mean():+.4f} "
           f"t={t_stat(sampled):+.2f}")
+    print(
+        f"Newey-West L={MAX_LAG} (全部样本，修正自相关): "
+        f"{newey_west_t_stat(ic, MAX_LAG):+.2f}"
+    )
 
     quantiles = quantile_returns(data, QUANTILES)
 
@@ -94,6 +98,10 @@ def main():
     print(f"naive t   (overlap, 不可信) : {t_stat(spread):+.2f}")
     print(f"non-overlap n={len(sampled_spread)} mean={sampled_spread.mean():+.4f} "
           f"t={t_stat(sampled_spread):+.2f}")
+    print(
+        f"Newey-West L={MAX_LAG} (全部样本， 修正自相关): "
+        f"{newey_west_t_stat(spread, MAX_LAG):+.2f}"
+    )
 
 if __name__ == "__main__":
     main()
