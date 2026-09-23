@@ -30,6 +30,44 @@ def t_stat(series: pd.Series) -> float:
 
     return float(values.mean() / (values.std(ddof = 1) / np.sqrt(len(values))))
 
+def newey_west_t_stat(series: pd.Series, max_lag: int) -> float:
+    """均值 / Newey-West 长期标准误（Bartlett 权重）。
+
+        普通 t 值假设观测彼此独立；20 日前瞻收益在相邻交易日共享 19 天，
+        这个假设不成立，普通 t 值会严重虚高。
+        这里保留全部样本，只把"相邻观测相关"这件事计入标准误。
+
+        自协方差用 n - 1 归一化，好处是 max_lag = 0 时严格退化为 t_stat，
+        这条性质本身就是一条测试。
+        """
+    if max_lag < 0:
+        raise ValueError("max_lag must not be negative")
+
+    values = series.dropna().to_numpy(dtype = float)
+    n = len(values)
+    if n < 2:
+        raise ValueError("need at least 2 values")
+
+    centered = values - values.mean()
+
+    def autocovariance(lag: int) -> float:
+        if lag == 0:
+            return float(centered @ centered) / (n - 1)
+
+        return float (centered[lag:] @ centered[:-lag]) / (n - 1)
+
+    long_run_variance = autocovariance(0)
+
+    for lag in range(1, min(max_lag, n - 1) + 1):
+        weight = 1.0 - lag / (max_lag + 1)
+        long_run_variance += 2.0 * weight * autocovariance(lag)
+
+    variance_of_mean = long_run_variance / n
+    if variance_of_mean <= 0:
+        raise ValueError("non-positive long-run variance")
+
+    return float(values.mean() / np.sqrt(variance_of_mean))
+
 def sample_every(series: pd.Series, step: int) -> pd.Series:
     """从第一个观测起，每隔 step 个取一个（固定起点 = 结果可复现）。"""
     if step <= 0:

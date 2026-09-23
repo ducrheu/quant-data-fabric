@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from src.factors.evaluate import rank_ic, sample_every, t_stat, long_short_spread, quantile_returns
+from src.factors.evaluate import rank_ic, sample_every, t_stat, long_short_spread, quantile_returns, newey_west_t_stat
 
 def make_data (factor_values, returns):
     return pd.DataFrame(
@@ -71,3 +71,26 @@ def test_quantile_returns_keeps_one_row_per_date():
 def test_quantile_returns_rejects_single_group():
     with pytest.raises(ValueError):
         quantile_returns(make_data([0.01, 0.02], [0.10, 0.20]), n_quantiles = 1)
+
+def test_newey_west_equals_t_stat_when_no_lag():
+    # L=0 时没有滞后，长期方差就是方差 -> 必须严格遵守普通 t 值
+    series = pd.Series([1.0] * 5 + [2.0] * 5)
+
+    assert newey_west_t_stat(series, 0) == pytest.approx(t_stat(series))
+
+def test_newey_west_shrinks_t_stat_for_persistent_series():
+    # 手算：gamma0=2.5/9, gamma1=1.75/9, gamma2=1.0/9, gamma3=0.25/9,
+    #       gamma4=-0.5/9, gamma5=-1.25/9；L=5 的 Bartlett 权重为 5/6..1/6
+    # → 长期方差 0.694444, se=sqrt(0.694444/10)=0.263523, t=1.5/0.263523=5.6921
+    series = pd.Series([1.0] * 5 + [2.0] * 5)
+
+    assert newey_west_t_stat(series, 5) == pytest.approx(5.6921, abs = 1e-4)
+    assert abs(newey_west_t_stat(series, 5)) < abs(t_stat(series))
+
+def test_newey_west_rejects_negative_lag():
+    with pytest.raises(ValueError):
+        newey_west_t_stat(pd.Series([1.0, 2.0, 3.0]), -1)
+
+def test_newey_west_needs_two_observations():
+    with pytest.raises(ValueError):
+        newey_west_t_stat(pd.Series([1.0]), 0)
