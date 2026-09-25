@@ -18,6 +18,7 @@ from src.normalizers.financial import TushareFinancialNormalizer
 from src.pipelines.financial import FinancialPipeline
 from src.repositories.financial import FinancialRepository
 
+
 class DemoClient:
     """假 Tushare 客户端：2行 -- 1 行正常， 1 行坏数据"""
     def income(self, ts_code, start_date, end_date):
@@ -55,7 +56,7 @@ def run_once(pipeline, tag):
 def show(row):
     if row is None:
         return "None <- 当时这条数据还不存在"
-    return f"{row[2] / 1e8:.1f} 亿元 (available_time={row[4]:%Y-%m-%d}) "
+    return f"{row[2] / 1e8:.1f} 亿元 (available_time={row[4]:%Y-%m-%d})"
 
 def main():
     with tempfile.TemporaryDirectory() as tmp_dir:

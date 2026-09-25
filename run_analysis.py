@@ -98,7 +98,7 @@ def main():
     print(f"non-overlap n={len(sampled_spread)} mean={sampled_spread.mean():+.4f} "
           f"t={t_stat(sampled_spread):+.2f}")
     print(
-        f"Newey-West L={MAX_LAG} (全部样本， 修正自相关): "
+        f"Newey-West L={MAX_LAG} (全部样本，修正自相关): "
         f"{newey_west_t_stat(spread, MAX_LAG):+.2f}"
     )
 
