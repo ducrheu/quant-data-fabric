@@ -47,6 +47,9 @@ Pipeline            编排整条链路，输出处理结果
 - **业务校验跟随统一模型**：规范化之后的记录结构一致，规则可以全域复用。
 - **Connector 返回原始数据而非领域模型**：保留原始证据，便于回溯与重新规范化。
 
+因子域**不在这条链上**：`factor_daily` 由 `price_daily` 本地派生（`run_factor.py`），
+写入独立的 DuckDB。上面这条链只负责把外部数据搬进来，因子是链下游的派生计算。
+
 ## 数据域
 
 | 数据域 | 数据源接口 | 领域模型 | 数据表 |
@@ -72,8 +75,11 @@ Pipeline            编排整条链路，输出处理结果
 
 - **幂等**：`UNIQUE` 约束 + `ON CONFLICT DO NOTHING`，重复摄入不会产生重复数据；
   写入接口返回实际插入行数，因此流水线能区分「新增」与「重复跳过」。
-- **Revision**：财务事实的唯一键为 `(symbol, metric_name, event_time, revision_id)`，
-  同一报告期的不同版本可以共存，查询时按披露时间取最新可用版本。
+- **Revision**：财务事实的唯一键为 `(symbol, metric_name, event_time, revision_id)`。
+  仓储层支持同一报告期的多个版本共存，PIT 查询按 `available_time` 取"当时可见的
+  最新版本"（有测试覆盖）。
+  ⚠️ 但摄入层目前恒用 `revision_id = 1`，因此真实的重述数据会被唯一键拦截、写不进去——
+  revision 生命周期是 **V0.4** 的范围，见「已知局限」。
 - **PIT 查询**：以 `available_time <= as_of_time` 为闸门，支持两种模式——
   取全局最新可见值，或通过 `event_time` 精确查询指定报告期。
 - **部分成功**：单条坏数据只跳过并记录，不影响整批入库，结果对象汇报
@@ -107,13 +113,13 @@ from src.repositories.financial import FinancialRepository
 
 repo = FinancialRepository("data/quant_data.duckdb")
 
-# 站在 2026-05-10：只能看到当时已披露的版本
+# 站在 2026-05-10：2025 年报（available_time = 2026-04-30）已可见
 repo.get_pit("600519.SH", "net_income", datetime(2026, 5, 10))
-# -> 800 亿（2025 年报初版）
+# -> 800 亿
 
-# 修正版 2026-06-15 才披露，因此 7 月查询才能看到
-repo.get_pit("600519.SH", "net_income", datetime(2026, 7, 1))
-# -> 780 亿（修正版覆盖初版）
+# 站在披露前：同一份数据在 2026-03-01 还不存在
+repo.get_pit("600519.SH", "net_income", datetime(2026, 3, 1))
+# -> None
 
 # 精确查询指定报告期
 repo.get_pit(
@@ -123,6 +129,11 @@ repo.get_pit(
     event_time=datetime(2025, 12, 31),
 )
 ```
+
+上面两个查询就是 `demo.py` 第 [3] 段打印的内容，可离线复现。
+
+注意：这个示例**不演示"修正版覆盖初版"**。仓储层能做到（有测试覆盖），但摄入层的
+`revision_id` 恒为 1，重述数据会被唯一键拦截 —— 完整的 revision 生命周期排在 V0.4。
 
 ## 项目结构
 
@@ -139,7 +150,8 @@ src/
 ├── trading_calendar.py 交易日历快照的读写
 └── universe.py        股票池快照的读写与可复现抽样
 tests/                 单元测试与集成测试（21 个文件，无需网络）
-demo.py                离线演示入口（假数据）
+demo.py                离线演示入口：假数据走完整链路，演示 PIT 三条保证
+demo_replay.py         真实库回放：只读打开本地 DuckDB，打印规模与摄入对账
 run_universe.py        构建参考数据快照（股票池 + 交易日历，需要网络与 token）
 run_ingest.py          按交易日摄入全市场行情（需要网络与 token，支持断点恢复）
 run_daily.py           旧入口：单只股票行情摄入（仅剩旧 10 只池，待清理）
@@ -157,15 +169,20 @@ pip install -e .
 # 在项目根目录创建 .env，写入你的 Tushare token（不要提交到 Git）
 # TUSHARE_TOKEN=***
 
-python demo.py            # 离线演示，使用假数据走完整链路
+python demo.py            # 离线演示：假数据、零网络，演示 PIT 三条保证
 
 python run_universe.py    # 重建股票池与交易日历快照（需要网络与 token）
 python run_ingest.py 5    # 只摄入前 5 个交易日（试跑）；不带参数则摄入全部
 python run_factor.py      # 由行情库计算 mom_20d
-python run_analysis.py    # 输出 IC、分位组合收益与多空价差
+
+python demo_replay.py     # 回放真实库：数据规模 + 摄入对账（需先建库）
+python run_analysis.py    # 输出 IC、分位组合收益与多空价差（三种显著口径）
 
 python -m pytest          # 运行全部测试，无需网络
 ```
+
+注：`data/*.duckdb` 不进 Git，所以 `demo_replay.py` 需要先跑上面三条建库命令；
+`demo.py` 不依赖任何数据，clone 下来就能跑。
 
 ## 测试
 
@@ -175,7 +192,8 @@ python -m pytest          # 运行全部测试，无需网络
 关键测试场景包括：
 
 - 幂等性：重复写入不产生重复数据，并正确区分「新增」与「跳过」。
-- PIT 正确性：未来数据不可见；同一报告期的修正版本覆盖初版。
+- PIT 正确性：未来数据不可见；同一报告期的多个版本按 `available_time` 返回
+  "当时可见的最新版本"。
 - 插入顺序无关：查询结果只由数据内容决定，不受写入顺序影响。
 - 多报告期演进：不同报告期在同一查询时点返回正确版本。
 - 边界情况：如 `high == low` 的平价交易日属于合法数据。
@@ -187,7 +205,7 @@ python -m pytest          # 运行全部测试，无需网络
 ## 已知局限
 
 - 财务域尚未接入真实数据（Tushare `income` 接口需要 2000 积分），当前由离线假数据测试覆盖。
-- `revision_id` 目前恒为 1，同一报告期的重述数据会被唯一键拦截；完整的 revision 生命周期计划在 V0.3 实现。
+- `revision_id` 目前恒为 1，同一报告期的重述数据会被唯一键拦截；完整的 revision 生命周期计划在 **V0.4** 实现。
 - 行情域当前为 300 只股票池、417 个交易日、约 12.4 万行；价格为**未复权**数据，
   除权除息会造成价格跳空，尚未接入复权因子。
 - 行情域尚未做增量调度与性能优化：摄入靠手动重跑，逐日串行请求。
@@ -199,8 +217,8 @@ python -m pytest          # 运行全部测试，无需网络
 ## 因子研究结论
 
 `mom_20d` 在当前样本上的完整结论见 [FINDINGS.md](FINDINGS.md)：
-20 日动量呈**弱反转倾向**，rank IC 的边缘显著而多空价差不显著，
-尚不足以支持可交易策略。
+20 日动量呈**弱反转倾向**。rank IC 在两种可信口径（非重叠、Newey-West）下均显著为负，
+但 Q5−Q1 多空价差在同样两种口径下都不显著，尚不足以支持"可交易策略"的结论。
 
 ## Roadmap
 
@@ -208,4 +226,5 @@ python -m pytest          # 运行全部测试，无需网络
 |---|---|---|
 | V0.1 | 财务数据摄入、PIT 查询、幂等 | 已完成（tag `v0.1`） |
 | V0.2 | 真实 Tushare 接入、行情数据域、两层校验 | 已完成（tag `v0.2`） |
-| V0.3 | 因子计算与评价、参考数据快照、按日批量摄入与断点恢复 | 因子部分已完成；Revision 生命周期、数据血缘未开始 |
+| V0.3 | 因子计算与评价、参考数据快照、按日批量摄入与断点恢复、离线与回放两个 demo | 已完成（tag `v0.3`） |
+| V0.4 | Revision 生命周期、数据血缘 | 未开始 |
