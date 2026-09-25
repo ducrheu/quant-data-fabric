@@ -72,7 +72,6 @@ def main():
     print(f"std : {ic.std():+.4f}")
     print(f"IC>0 : {(ic > 0).mean():.1%}")
     
-
     sampled = sample_every(ic, HORIZON)
 
     print("=== significance ===")
