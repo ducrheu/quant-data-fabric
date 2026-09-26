@@ -4,10 +4,12 @@ from src.domain.raw import RawRecord
 from src.normalizers.financial import TushareFinancialNormalizer
 from src.repositories.financial import FinancialRepository
 from src.validators.financial import validate_income_raw
+from src.domain.financial import SaveOutcome
 
 class IngestResult(BaseModel):
     total: int = 0
     saved: int = 0
+    restated: int = 0
     skipped: int = 0
     failed: int = 0
     errors: list[str] = []
@@ -47,10 +49,13 @@ class FinancialPipeline:
                 continue
 
             record = self.normalizer.normalize(raw)
-            inserted = self.repository.save(record)
-            if inserted:
-                result.saved += 1
-            else:
+            outcome = self.repository.save(record)
+
+            if outcome == SaveOutcome.DUPLICATE:
                 result.skipped += 1
+            else:
+                result.saved += 1
+                if outcome == SaveOutcome.RESTATED:
+                    result.restated += 1
 
         return result

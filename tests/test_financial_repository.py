@@ -2,9 +2,8 @@ from datetime import datetime
 
 import pytest
 
-from src.domain.financial import FinancialRecord
 from src.repositories.financial import FinancialRepository
-
+from src.domain.financial import FinancialRecord, SaveOutcome
 
 @pytest.fixture
 def repository(tmp_path):
@@ -209,7 +208,7 @@ def test_get_pit_return_none_when_event_not_available_yet(repository):
     assert result is None
 
 
-def test_save_returns_inserted_count(repository):
+def test_save_returns_outcome(repository):
     record = FinancialRecord(
         symbol="600519.SH",
         metric_name="net_income",
@@ -223,5 +222,36 @@ def test_save_returns_inserted_count(repository):
     first = repository.save(record)
     second = repository.save(record)
 
-    assert first == 1
-    assert second == 0
+    assert first == SaveOutcome.INSERTED
+    assert second == SaveOutcome.DUPLICATE
+
+def test_restatement_creates_new_revision(repository):
+    v1 = FinancialRecord(
+        symbol="600519.SH",
+        metric_name="net_income",
+        value=80000000000,
+        event_time=datetime(2025, 12, 31),
+        available_time=datetime(2026, 4, 30),
+        processing_time=datetime(2026, 5, 1),
+        source="tushare",
+        revision_id=1,
+    )
+    v2 = FinancialRecord(
+        symbol="600519.SH",
+        metric_name="net_income",
+        value=78000000000,
+        event_time=datetime(2025, 12, 31),
+        available_time=datetime(2026, 6, 15),
+        processing_time=datetime(2026, 6, 16),
+        source="tushare",
+        revision_id=1,  # 故意写 1：证明 repository 不依赖这个名义值
+    )
+
+    assert repository.save(v1) == SaveOutcome.INSERTED
+    assert repository.save(v2) == SaveOutcome.RESTATED
+
+    rows = repository.con.execute(
+        "SELECT revision_id, value FROM financial_fact ORDER BY revision_id"
+    ).fetchall()
+
+    assert rows == [(1, 80000000000), (2, 78000000000)]
