@@ -6,6 +6,7 @@ from src.connectors.tushare_connector import TushareConnector
 from src.normalizers.financial import TushareFinancialNormalizer
 from src.pipelines.financial import FinancialPipeline
 from src.repositories.financial import FinancialRepository
+from src.repositories.ingest_batch import IngestBatchRepository
 
 class FakeTushareClient:
     def __init__(self, rows):
@@ -80,3 +81,75 @@ def test_pipeline_second_run_skips_duplicates(tmp_path):
     assert second.saved == 0
     assert second.skipped == 1
     assert rows_in_db == 1
+
+def test_pipeline_links_facts_to_batch(tmp_path):
+    rows = [
+        {
+            "ts_code": "600519.SH",
+            "n_income": 80000000000,
+            "end_date": "20251231",
+            "ann_date": "20260430",
+        },
+    ]
+
+    db_path = str(tmp_path / "test.duckdb")
+    client = FakeTushareClient(rows)
+    connector = TushareConnector(client)
+    normalizer = TushareFinancialNormalizer()
+    repository = FinancialRepository(db_path)
+    batch_repository = IngestBatchRepository(db_path)
+    pipeline = FinancialPipeline(
+        connector, normalizer, repository, batch_repository,
+    )
+
+    result = pipeline.run("600519.SH", "20250101", "20251231")
+
+    batch = batch_repository.get(result.batch_id)
+    stored = repository.con.execute(
+        "SELECT batch_id FROM financial_fact"
+    ).fetchall()
+
+    repository.close()
+    batch_repository.close()
+
+    assert result.batch_id == 1
+    assert batch[4] == "success"
+    assert batch[7] == 1
+    assert stored == [(1,)]
+
+    def test_pipeline_mark_batch_partial_when_a_row_fails(tmp_path):
+        rows = [
+            {
+                "ts_code": "600519.SH",
+                "n_income": 80000000000,
+                "end_date": "20251231",
+                "ann_date": "20260430",
+            },
+            {
+                "ts_code": "600519.SH",
+                "n_income": "abc",  # 坏数据
+                "end_date": "20251231",
+                "ann_date": "20260430",
+            },
+        ]
+
+        db_path = str(tmp_path / "test.duckdb")
+        client = FakeTushareClient(rows)
+        repository = FinancialRepository(db_path)
+        batch_repository = IngestBatchRepository(db_path)
+        pipeline = FinancialPipeline(
+            TushareConnector(client),
+            TushareFinancialNormalizer(),
+            repository,
+            batch_repository,
+        )
+
+        result = pipeline.run("600519.SH", "20250101", "20251231")
+
+        batch = batch_repository.get(result.batch_id)
+
+        repository.close()
+        batch_repository.close()
+
+        assert batch[4] == "partial"
+        assert batch[12] is None

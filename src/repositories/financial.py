@@ -48,6 +48,8 @@ class FinancialRepository:
                 INTEGER
                 NOT
                 NULL,
+                batch_id
+                INTEGER,
 
                 UNIQUE
             (
@@ -60,7 +62,7 @@ class FinancialRepository:
             """
         )
 
-    def save(self, record: FinancialRecord) -> SaveOutcome:
+    def save(self, record: FinancialRecord, batch_id: int | None = None) -> SaveOutcome:
         # 1. 查出同一事实(symbol + metric + event_time) 已有的所有版本
         existing = self.con.execute(
             """
@@ -96,10 +98,11 @@ class FinancialRepository:
             available_time,
             processing_time,
             source,
-            revision_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            revision_id,
+            batch_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            [record.symbol, record.metric_name, record.value, record.event_time, record.available_time, record.processing_time, record.source, revision_id,],
+            [record.symbol, record.metric_name, record.value, record.event_time, record.available_time, record.processing_time, record.source, revision_id,batch_id,],
         )
         return outcome
 

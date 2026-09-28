@@ -1,3 +1,5 @@
+import json
+from src.repositories.ingest_batch import IngestBatchRepository
 from pydantic import BaseModel
 from src.connectors.tushare_connector import TushareConnector
 from src.domain.raw import RawRecord
@@ -12,6 +14,7 @@ class IngestResult(BaseModel):
     restated: int = 0
     skipped: int = 0
     failed: int = 0
+    batch_id: int | None = None
     errors: list[str] = []
 
 class FinancialPipeline:
@@ -20,10 +23,12 @@ class FinancialPipeline:
         connector: TushareConnector,
         normalizer: TushareFinancialNormalizer,
         repository: FinancialRepository,
+        batch_repository: IngestBatchRepository | None = None,
     ):
         self.connector = connector
         self.normalizer = normalizer
         self.repository = repository
+        self.batch_repository = batch_repository
 
     def run(
         self,
@@ -32,6 +37,14 @@ class FinancialPipeline:
         end_date: str,
     ) -> IngestResult:
         result = IngestResult()
+
+
+        if self.batch_repository is not None:
+            params = json.dumps(
+                {"ts_code": ts_code, "start_date": start_date, "end_date": end_date},
+                ensure_ascii = False,
+            )
+            result.batch_id = self.batch_repository.start("tushare", "income", params)
 
         raw_records = self.connector.fetch_income(
             ts_code = ts_code,
@@ -49,7 +62,7 @@ class FinancialPipeline:
                 continue
 
             record = self.normalizer.normalize(raw)
-            outcome = self.repository.save(record)
+            outcome = self.repository.save(record, result.batch_id)
 
             if outcome == SaveOutcome.DUPLICATE:
                 result.skipped += 1
@@ -57,5 +70,17 @@ class FinancialPipeline:
                 result.saved += 1
                 if outcome == SaveOutcome.RESTATED:
                     result.restated += 1
+
+        if self.batch_repository is not None:
+            status = "success" if result.failed == 0 else "partial"
+            self.batch_repository.finish(
+                result.batch_id,
+                status,
+                total = result.total,
+                saved = result.saved,
+                restated = result.restated,
+                skipped = result.skipped,
+                failed = result.failed,
+            )
 
         return result
