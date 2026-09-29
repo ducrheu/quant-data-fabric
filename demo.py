@@ -1,4 +1,5 @@
-"""Quant Data Fabric 离线 demo：零网络、假数据，演示 PIT 的四条核心保证。
+"""Quant Data Fabric 离线 demo：零网络、假数据。
+演示 PIT 的四条核心保证（部分成功 / 幂等 / as-of 闸门 / 重述共存）+ 数据血缘。
 
 跑法：
     python demo.py
@@ -17,6 +18,7 @@ from src.connectors.tushare_connector import TushareConnector
 from src.normalizers.financial import TushareFinancialNormalizer
 from src.pipelines.financial import FinancialPipeline
 from src.repositories.financial import FinancialRepository
+from src.repositories.ingest_batch import IngestBatchRepository
 
 # 第一批抓取：1行正常 + 1行坏数据
 GOOD_AND_BAD_ROWS = [
@@ -35,7 +37,7 @@ GOOD_AND_BAD_ROWS = [
 # 第二批抓取：同一报告期的更正公告（重述）
 RESTATEMENT_ROWS = [
     {
-"n_income": 78000000000,
+        "n_income": 78000000000,
         "end_date": "20251231",
         "ann_date": "20260615",
     },
@@ -49,12 +51,13 @@ class DemoClient:
     def income(self, ts_code, start_date, end_date):
         return pd.DataFrame([{**row, "ts_code": ts_code} for row in self.rows])
 
-def build_pipeline(rows, repository):
+def build_pipeline(rows, repository, batch_repository):
     """用给定的假数据 + 同一个真实仓库, 拼一条摄入链"""
     return FinancialPipeline(
         TushareConnector(DemoClient(rows)),
         TushareFinancialNormalizer(),
         repository,
+        batch_repository,
     )
 
 def run_once(pipeline, tag):
@@ -65,7 +68,8 @@ def run_once(pipeline, tag):
     )
     print(
         f"  {tag}: total={result.total} saved={result.saved} "
-        f"restated={result.restated} skipped={result.skipped} failed={result.failed}"
+        f"restated={result.restated} skipped={result.skipped} failed={result.failed} "
+        f"failed={result.failed} batch_id={result.batch_id}"
     )
     for err in result.errors:
         print(f"    error: {err}")
@@ -78,17 +82,20 @@ def show(row):
 
 def main():
     with tempfile.TemporaryDirectory() as tmp_dir:
-        repository = FinancialRepository(os.path.join(tmp_dir, "demo.duckdb"))
+        db_path = os.path.join(tmp_dir, "demo.duckdb")
+        repository = FinancialRepository(db_path)
+        batch_repository = IngestBatchRepository(db_path)
+
         print("=" * 64)
         print("[1] 部分成功：坏行只被跳过，好行正常入库")
         print("=" * 64)
-        run_once(build_pipeline(GOOD_AND_BAD_ROWS, repository), "First time")
+        run_once(build_pipeline(GOOD_AND_BAD_ROWS, repository, batch_repository), "First time")
 
         print()
         print("=" * 64)
         print("[2] 幂等：同一批数据再跑一次，saved=0")
         print("=" * 64)
-        run_once(build_pipeline(GOOD_AND_BAD_ROWS, repository), "Second time")
+        run_once(build_pipeline(GOOD_AND_BAD_ROWS, repository, batch_repository), "Second time")
 
         print()
         print("=" * 64)
@@ -108,7 +115,10 @@ def main():
         print("=" * 64)
         print(" 数据：2026-06-15 更正公告，net_income 由 800 亿改为 780 亿")
 
-        run_once(build_pipeline(RESTATEMENT_ROWS, repository), "Restatement")
+        restatement = run_once(
+            build_pipeline(RESTATEMENT_ROWS, repository, batch_repository),
+            "Restatement",
+        )
 
         rows_in_db = repository.con.execute(
             "SELECT COUNT(*) FROM financial_fact WHERE symbol = '600519.SH'"
@@ -120,6 +130,26 @@ def main():
 
         print(f"    as_of = 2026-05-10(重述前) -> {show(history)}")
         print(f"    as_of = 2026-07-01(重述后) -> {show(latest)}")
+
+        print()
+        print("=" * 64)
+        print("[5] 血缘， 每次调用一条批次记录， 从事实可反查参数")
+        print("=" * 64)
+
+        for row in batch_repository.con.execute(
+            """
+            SELECT batch_id, api_name, status, total, saved, restated, skipped, failed
+            FROM ingest_batch ORDER BY batch_id
+            """
+        ).fetchall():
+            print(
+                f"  batch {row[0]}: {row[1]} status={row[2]} "
+                f"total={row[3]} saved={row[4]} restated={row[5]} "
+                f"skipped={row[6]} failed={row[7]}"
+            )
+
+        batch = batch_repository.get(restatement.batch_id)
+        print(f"    重述批次的参数：{batch[3]}")
 
         repository.close()
 if __name__ == "__main__":
