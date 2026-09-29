@@ -46,6 +46,8 @@ Pipeline            编排整条链路，输出处理结果
 - **格式校验跟随数据源**：不同数据源的字段格式不同，各自校验。
 - **业务校验跟随统一模型**：规范化之后的记录结构一致，规则可以全域复用。
 - **Connector 返回原始数据而非领域模型**：保留原始证据，便于回溯与重新规范化。
+- **血缘由编排层建立**：批次边界只有 Pipeline 知道（它调一次 Connector），而读库
+  权力在 Repository；因此 `batch_id` 由 Pipeline 生成、由 Repository 写入。
 
 因子域**不在这条链上**：`factor_daily` 由 `price_daily` 本地派生（`run_factor.py`），
 写入独立的 DuckDB。上面这条链只负责把外部数据搬进来，因子是链下游的派生计算。
@@ -70,16 +72,21 @@ Pipeline            编排整条链路，输出处理结果
 
 股票池必须从"当时真实存在的全市场"里抽样，不能拿今天的成分股回到过去回测：
 否则已经退市、被剔除的股票会从样本里消失，收益被系统性高估（幸存者偏差）。
+除数据域之外还有两张**元数据表**：`ingest_log`（行情按日摄入账本，用于断点恢复）
+与 `ingest_batch`（每次 API 调用的血缘记录）。它们只记录"过程"，不参与研究口径。
 
 ## 核心设计
 
-- **幂等**：`UNIQUE` 约束 + `ON CONFLICT DO NOTHING`，重复摄入不会产生重复数据；
-  写入接口返回实际插入行数，因此流水线能区分「新增」与「重复跳过」。
-- **Revision**：财务事实的唯一键为 `(symbol, metric_name, event_time, revision_id)`。
-  仓储层支持同一报告期的多个版本共存，PIT 查询按 `available_time` 取"当时可见的
-  最新版本"（有测试覆盖）。
-  ⚠️ 但摄入层目前恒用 `revision_id = 1`，因此真实的重述数据会被唯一键拦截、写不进去——
-  revision 生命周期是 **V0.4** 的范围，见「已知局限」。
+- **幂等**：重复摄入不会产生重复行。财务事实用「先查后写」判重（`(available_time,
+  value)` 全同即判 `duplicate`），写入返回 `SaveOutcome`；行情与因子表用 `UNIQUE`
+  约束 + `ON CONFLICT DO NOTHING`，写入返回实际插入行数。
+- **Revision 生命周期**：财务事实的唯一键为 `(symbol, metric_name, event_time, revision_id)`，
+  同一报告期的多个版本**共存、不覆盖**。写入时仓储层先查该事实的已有版本：若
+  `(available_time, value)` 完全一致则判为重复（幂等重跑），否则 `revision_id = max + 1`
+  落为新版本。写入返回 `SaveOutcome`（`inserted` / `restated` / `duplicate`），流水线据此
+  区分「新增」「重述」「重复跳过」。旧实现用 `ON CONFLICT DO NOTHING`，重述数据会被静默
+  丢弃、且与幂等重跑同样计为 `skipped`——这是 V0.4 修掉的洞。
+  PIT 查询按 `available_time` 取"当时可见的最新版本"，并列时以 `revision_id` 兜底排序。
 - **PIT 查询**：以 `available_time <= as_of_time` 为闸门，支持两种模式——
   取全局最新可见值，或通过 `event_time` 精确查询指定报告期。
 - **部分成功**：单条坏数据只跳过并记录，不影响整批入库，结果对象汇报
@@ -132,8 +139,10 @@ repo.get_pit(
 
 上面两个查询就是 `demo.py` 第 [3] 段打印的内容，可离线复现。
 
-注意：这个示例**不演示"修正版覆盖初版"**。仓储层能做到（有测试覆盖），但摄入层的
-`revision_id` 恒为 1，重述数据会被唯一键拦截 —— 完整的 revision 生命周期排在 V0.4。
+重述（同一报告期的更正公告）会作为**新版本**落库，历史不被改写：`as_of = 2026-05-10`
+查出仍是 800 亿，`as_of = 2026-07-01` 才是修正后的 780 亿。这两个查询是 `demo.py`
+第 [3] / [4] 段的离线复现。按批次反查血缘见同文件第 [5] 段：
+`IngestBatchRepository.get(batch_id)[3]` 返回该次调用的 `params`。
 
 ## 项目结构
 
@@ -144,13 +153,13 @@ src/
 ├── domain/            领域模型层（RawRecord / FinancialRecord / PriceRecord / FactorRecord）
 ├── normalizers/       规范化层（源字段 → 统一模型）
 ├── validators/        校验层（格式校验 + 业务校验）
-├── repositories/      存储层（财务 / 行情 / 因子 / 摄入日志）
+├── repositories/      存储层（财务 / 行情 / 因子 / 摄入日志 / 摄入批次）
 ├── factors/           因子层（动量因子计算 + 因子评价指标）
 ├── pipelines/         编排层（串联链路并统计结果）
 ├── trading_calendar.py 交易日历快照的读写
 └── universe.py        股票池快照的读写与可复现抽样
-tests/                 单元测试与集成测试（21 个文件，无需网络）
-demo.py                离线演示入口：假数据走完整链路，演示 PIT 三条保证
+tests/                 单元测试与集成测试（22 个文件，无需网络）
+demo.py                离线演示入口：假数据走完整链路，演示 PIT 四条保证 + 数据血缘（5 段）
 demo_replay.py         真实库回放：只读打开本地 DuckDB，打印规模与摄入对账
 run_universe.py        构建参考数据快照（股票池 + 交易日历，需要网络与 token）
 run_ingest.py          按交易日摄入全市场行情（需要网络与 token，支持断点恢复）
@@ -169,7 +178,7 @@ pip install -e .
 # 在项目根目录创建 .env，写入你的 Tushare token（不要提交到 Git）
 # TUSHARE_TOKEN=***
 
-python demo.py            # 离线演示：假数据、零网络，演示 PIT 三条保证
+python demo.py            # 离线演示：假数据、零网络，演示 PIT 四条保证 + 数据血缘
 
 python run_universe.py    # 重建股票池与交易日历快照（需要网络与 token）
 python run_ingest.py 5    # 只摄入前 5 个交易日（试跑）；不带参数则摄入全部
@@ -191,7 +200,11 @@ python -m pytest          # 运行全部测试，无需网络
 
 关键测试场景包括：
 
-- 幂等性：重复写入不产生重复数据，并正确区分「新增」与「跳过」。
+- 幂等性：重复写入不产生重复数据，并区分「新增」「重述」「重复跳过」三种结果。
+- Revision：同一报告期的新披露落为**新版本**（`restated`），完全重复判为
+  `duplicate`；重述不覆盖历史版本。
+- 血缘：批次创建即写 `running`，收口后写入计数与 `finished_at`；摄入的事实行
+  回指正确的 `batch_id`；有坏行时批次状态为 `partial`。
 - PIT 正确性：未来数据不可见；同一报告期的多个版本按 `available_time` 返回
   "当时可见的最新版本"。
 - 插入顺序无关：查询结果只由数据内容决定，不受写入顺序影响。
@@ -205,7 +218,12 @@ python -m pytest          # 运行全部测试，无需网络
 ## 已知局限
 
 - 财务域尚未接入真实数据（Tushare `income` 接口需要 2000 积分），当前由离线假数据测试覆盖。
-- `revision_id` 目前恒为 1，同一报告期的重述数据会被唯一键拦截；完整的 revision 生命周期计划在 **V0.4** 实现。
+- Revision 只实现了「重述共存」，**未实现「撤回 / 失效」**：一条数据被撤回后如何表达
+  "此后不再可见"仍未定义（软删标志或作废版本），留待后续版本。
+- 血缘只做到"记录"，**尚未做成重放脚本**：按 `batch_id` 删除并重新拉取还需要一个
+  工具，`params` 已具备重放所需的全部信息。
+- `financial_fact.batch_id` 允许为空（V0.4 之前写入的行没有批次号），且该列未加
+  外键约束。
 - 行情域当前为 300 只股票池、417 个交易日、约 12.4 万行；价格为**未复权**数据，
   除权除息会造成价格跳空，尚未接入复权因子。
 - 行情域尚未做增量调度与性能优化：摄入靠手动重跑，逐日串行请求。
@@ -227,4 +245,4 @@ python -m pytest          # 运行全部测试，无需网络
 | V0.1 | 财务数据摄入、PIT 查询、幂等 | 已完成（tag `v0.1`） |
 | V0.2 | 真实 Tushare 接入、行情数据域、两层校验 | 已完成（tag `v0.2`） |
 | V0.3 | 因子计算与评价、参考数据快照、按日批量摄入与断点恢复、离线与回放两个 demo | 已完成（tag `v0.3`） |
-| V0.4 | Revision 生命周期、数据血缘 | 未开始 |
+| V0.4 | Revision 生命周期（重述共存）、数据血缘（`ingest_batch` + `batch_id`） | 已完成（tag `v0.4`） |
