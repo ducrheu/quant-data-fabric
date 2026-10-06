@@ -137,3 +137,14 @@ def backtest(
         previous_long = long_set
         previous_short = short_set
     return pd.DataFrame(rows)
+
+def period_costs(turnover: pd.Series, fee_rate: float) -> pd.Series:
+    """每期交易成本：换手 × 2（卖出 + 买入）× 单边费率。"""
+    if fee_rate < 0:
+        raise ValueError("fee_rate must not be negative")
+
+    return turnover * 2.0 * fee_rate
+
+def net_returns(gross: pd.Series, turnover: pd.Series, fee_rate: float) -> pd.Series:
+    """毛收益扣掉交易成本后的净收益。"""
+    return gross - period_costs(turnover, fee_rate)

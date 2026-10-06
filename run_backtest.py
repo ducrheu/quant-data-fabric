@@ -15,7 +15,7 @@ import pandas as pd
 
 from src.config import FACTOR_DB_PATH, PRICE_DB_PATH
 from src.factors.backtest import (
-annualized_return, backtest, cumulative_net, max_drawdown, sharpe,
+annualized_return, backtest, cumulative_net, max_drawdown, net_returns, sharpe,
 )
 
 FACTOR_NAME = "mom_20d"
@@ -24,6 +24,7 @@ QUANTILES = 5
 TRADING_DAYS_PER_YEAR = 252
 PERIODS_PER_YEAR = TRADING_DAYS_PER_YEAR / HORIZON
 EXECUTION_PRICE = "open"
+FEE_BPS = (0, 5, 10, 20, 30)
 
 def load_panels():
     """读出因子与价格，各自透视成 (交易日 × 股票) 的面板。"""
@@ -90,6 +91,19 @@ def main():
     print(f"max drawdown       : {max_drawdown(net):.2%}")
     print(f"mean turnover      : {result['turnover'].mean():.2%}")
     print(f"win rate           : {(result['spread'] > 0).mean():.1%}")
+    print()
+    print("=== cost sensitivity (single-side fee) ===")
+    for fee_bps in FEE_BPS:
+        fee_rate = fee_bps / 10000.0
+        net = net_returns(result["spread"], result["turnover"], fee_rate)
+        net_curve = cumulative_net(net)
+        total_net = float(net_curve.iloc[-1] - 1.0)
+        print(
+            f" {fee_bps:>3} bps : total={total_net:+.2%}  "
+            f"annualized={annualized_return(total_net, n_periods, PERIODS_PER_YEAR):+.2%}  "
+            f"sharpe={sharpe(net, PERIODS_PER_YEAR):+.2f}  "
+            f"max_dd={max_drawdown(net_curve):.2%}"
+        )
     print()
     print(
         f"! 独立周期数只有 {n_periods}（{len(common_dates)} 个交易日 / {HORIZON}），"

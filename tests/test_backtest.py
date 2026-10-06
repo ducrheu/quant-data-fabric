@@ -9,7 +9,9 @@ from src.factors.backtest import(
     cumulative_net,
     execution_returns,
     max_drawdown,
+    net_returns,
     one_way_turnover,
+    period_costs,
     rebalance_periods,
     sharpe,
 )
@@ -99,3 +101,16 @@ def test_backtest_is_non_overlapping_and_reports_turnover():
     assert result["spread"].iloc[0] == pytest.approx(0.40)
     assert result["turnover"].iloc[0] == pytest.approx(1.0)
     assert len(rebalance_periods(5, 1)) == 3
+
+def test_period_costs_charge_both_sides():
+    turnover = pd.Series([0.5, 1.0])
+
+    assert period_costs(turnover, 0.001).tolist() == pytest.approx([0.001, 0.002])
+
+def test_net_returns_subtract_costs():
+    gross = pd.Series([0.02, -0.01])
+    turnover = pd.Series([0.5, 0.5])
+
+    net = net_returns(gross, turnover, 0.001)
+
+    assert net.tolist() == pytest.approx([0.019, -0.011])
