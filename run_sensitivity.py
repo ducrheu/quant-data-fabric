@@ -20,6 +20,7 @@ from src.factors.evaluate import (
     quantile_returns,
     rank_ic,
 )
+from src.factors.momentum import forward_return_frame, momentum_frame
 
 HORIZONS = (10, 20, 40)
 QUANTILES = 5
@@ -28,14 +29,14 @@ TRADING_DAYS_PER_YEAR = 252
 def load_panels():
     """读收盘价与开盘价，各透视成 (交易日 × 股票) 的面板。"""
     con = duckdb.connect(PRICE_DB_PATH, read_only=True)
-    price = con.execute(
-        "SELECT symbol, trade_time, close, open, FROM price_daily ORDER BY symbol, trade_time"
+    prices = con.execute(
+        "SELECT symbol, trade_time, close, open FROM price_daily ORDER BY symbol, trade_time"
     ).fetch_df()
     con.close()
 
-    close_panel = price.pivot(index="trade_time", columns="symbol", values="close")
-    open_panel = price.pivot(index="trade_time", columns="symbol", values="open")
-    return close_panel, open_panel
+    close_panel = prices.pivot(index="trade_time", columns="symbol", values="close")
+    open_panel = prices.pivot(index="trade_time", columns="symbol", values="open")
+    return prices, close_panel, open_panel
 
 def long_frame(factor_panel, forward_panel):
     """两个宽面板摊成长表，交给 evaluate 里的纯函数用。"""
@@ -47,21 +48,20 @@ def long_frame(factor_panel, forward_panel):
     return frame.reset_index().dropna()
 
 def main():
-    close_panel, open_panel = load_panels()
+    prices, close_panel, open_panel = load_panels()
 
     print(f"{'H':>3} {'IC':>8} {'ICt(NW)':>8} {'spread':>8} {'sprt(NW)':>9} "
           f"{'n':>4} {'total':>9} {'sharpe':>7} {'turn':>7}")
 
     for horizon in HORIZONS:
-        factor_full = close_panel / close_panel.shift(horizon) - 1.0
-        forward_full = close_panel.shift(-horizon) / close_panel - 1.0
+        factor_panel = momentum_frame(prices, horizon).pivot(
+            index="trade_time", columns="symbol", values="value"
+        )
+        forward_panel = forward_return_frame(prices, horizon).pivot(
+            index="trade_time", columns="symbol", values="value"
+        ).reindex(factor_panel.index)
 
-        # 因子的前 horizon 行是全 NaN（还没攒够窗口），必须先切掉——
-        # 否则回测的第一个调仓日会拿到一个空序列
-        index = factor_full.dropna(how="all").index
-        factor_panel = factor_full.loc[index]
-        forward_panel = forward_full.loc[index]
-        price_panel = open_panel.loc[index]
+        price_panel = open_panel.reindex(factor_panel.index)
 
         data = long_frame(factor_panel, forward_panel)
 
