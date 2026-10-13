@@ -12,7 +12,7 @@ import time
 
 import tushare as ts
 
-from src.config import get_tushare_token
+from src.config import get_tushare_token, PRICE_SOURCE
 from src.connectors.price_connector import TusharePriceConnector
 from src.normalizers.price import TusharePriceNormalizer
 from src.pipelines.price import PricePipeline
@@ -21,7 +21,7 @@ from src.repositories.price import PriceRepository
 from src.universe import load_universe
 from src.trading_calendar import load_trading_days, to_date
 
-SOURCE = "tushare"
+SOURCE = PRICE_SOURCE
 REQUEST_INTERVAL_SECONDS = 0.3
 MAX_ATTEMPTS = 3
 RETRY_WAIT_SECONDS =5

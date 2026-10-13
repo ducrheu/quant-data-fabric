@@ -16,7 +16,7 @@ import sys
 
 import duckdb
 
-from src.config import FACTOR_DB_PATH, PRICE_DB_PATH
+from src.config import FACTOR_DB_PATH, PRICE_DB_PATH, PRICE_SOURCE
 
 def connect_read_only(path):
     """只读连接：缺库时给出可执行的补救命令，而不是抛栈"""
@@ -59,8 +59,9 @@ def main():
             """
             SELECT COUNT(*), SUM(saved)
             FROM ingest_log
-            WHERE status = 'success'
-            """
+            WHERE status = 'success' AND source = ?
+            """,
+            [PRICE_SOURCE],
         ).fetchone()
     except duckdb.Error as exc:
         print(f"    ingest_log 不可用: {exc}")
