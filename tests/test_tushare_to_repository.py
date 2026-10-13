@@ -45,6 +45,7 @@ def test_tushare_data_can_be_saved_and_required(repository):
 
     result = repository.get_pit(
         symbol = "600519.SH",
+        source = "tushare",
         metric_name = "net_income",
         as_of_time = datetime(2026, 5, 10)
     )

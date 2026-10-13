@@ -103,8 +103,8 @@ def main():
         print("=" * 64)
         print(" 数据：600519.SH 2025年报 net_income = 800 亿元：2026-04-30 披露")
 
-        before = repository.get_pit("600519.SH", "net_income", datetime(2026, 3, 1))
-        after = repository.get_pit("600519.SH", "net_income", datetime(2026, 5, 10))
+        before = repository.get_pit("600519.SH", "net_income", "tushare", datetime(2026, 3, 1))
+        after = repository.get_pit("600519.SH", "net_income", "tushare", datetime(2026, 5, 10))
 
         print(f"    as_of = 2026-03-01(披露前) -> {show(before)}")
         print(f"    as_of = 2026-05-10(披露后) -> {show(after)}")
@@ -125,8 +125,8 @@ def main():
         ).fetchone()[0]
         print(f"    financial_fact 中该股票共 {rows_in_db} 条（两个版本都留着）")
 
-        history = repository.get_pit("600519.SH", "net_income", datetime(2026, 5, 10))
-        latest = repository.get_pit("600519.SH", "net_income", datetime(2026, 7, 1))
+        history = repository.get_pit("600519.SH", "net_income", "tushare", datetime(2026, 5, 10))
+        latest = repository.get_pit("600519.SH", "net_income", "tushare", datetime(2026, 7, 1))
 
         print(f"    as_of = 2026-05-10(重述前) -> {show(history)}")
         print(f"    as_of = 2026-07-01(重述后) -> {show(latest)}")

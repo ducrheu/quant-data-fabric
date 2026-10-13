@@ -72,6 +72,7 @@ def test_pit_query_returns_latest_available_version(repository):
     result = repository.get_pit(
         "600519.SH",
         "net_income",
+        "tushare",
         datetime(2026, 5, 10),
     )
 
@@ -81,6 +82,7 @@ def test_pit_query_returns_latest_available_version(repository):
     result = repository.get_pit(
         "600519.SH",
         "net_income",
+        "tushare",
         datetime(2026, 7, 1),
     )
 
@@ -116,6 +118,7 @@ def test_pit_result_does_not_depend_on_insert_order(repository):
     result = repository.get_pit(
         "600519.SH",
         "net_income",
+        "tushare",
         datetime(2026, 7, 1)
     )
 
@@ -163,6 +166,7 @@ def test_pit_tracks_multiple_report_periods(repository):
     result = repository.get_pit(
         "600519.SH",
         "net_income",
+        "tushare",
         datetime(2025, 5, 1),
     )
     assert result is not None
@@ -171,6 +175,7 @@ def test_pit_tracks_multiple_report_periods(repository):
     result = repository.get_pit(
         "600519.SH",
         "net_income",
+        "tushare",
         datetime(2026, 5, 10),
     )
     assert result is not None
@@ -179,6 +184,7 @@ def test_pit_tracks_multiple_report_periods(repository):
     result = repository.get_pit(
         "600519.SH",
         "net_income",
+        "tushare",
         datetime(2026, 7, 1),
     )
     assert result is not None
@@ -201,6 +207,7 @@ def test_get_pit_return_none_when_event_not_available_yet(repository):
     result = repository.get_pit(
         "600519.SH",
         "net_income",
+        "tushare",
         datetime(2026, 3, 1),
         event_time = datetime(2025, 12, 31),
     )

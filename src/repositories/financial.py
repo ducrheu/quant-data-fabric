@@ -56,6 +56,7 @@ class FinancialRepository:
                 symbol,
                 metric_name,
                 event_time,
+                source,
                 revision_id
             )
                 )
@@ -68,10 +69,10 @@ class FinancialRepository:
             """
             SELECT revision_id, available_time, value
             FROM financial_fact
-            WHERE symbol = ? AND metric_name = ? AND event_time = ?
+            WHERE symbol = ? AND metric_name = ? AND event_time = ? AND source = ?
             ORDER BY revision_id    
             """,
-            [record.symbol, record.metric_name, record.event_time],
+            [record.symbol, record.metric_name, record.event_time, record.source],
         ).fetchall()
 
         # 2. 有一条 available_time 和 value 都相同 -> 真幂等重跑
@@ -110,17 +111,18 @@ class FinancialRepository:
             self,
             symbol: str,
             metric_name: str,
+            source: str,
             as_of_time: datetime,
             event_time: datetime | None = None,
     ):
         if event_time is None:
             order_clause = "ORDER BY event_time DESC, available_time DESC, revision_id DESC"
             event_filter = ""
-            params = [symbol, metric_name, as_of_time]
+            params = [symbol, metric_name, source, as_of_time]
         else:
             order_clause = "ORDER BY available_time DESC, revision_id DESC"
             event_filter = "AND event_time = ?"
-            params = [symbol, metric_name, event_time, as_of_time]
+            params = [symbol, metric_name, source, event_time, as_of_time]
 
         return self.con.execute(
             f"""
@@ -134,7 +136,7 @@ class FinancialRepository:
                    revision_id
             FROM financial_fact
             WHERE symbol = ?
-              AND metric_name = ?
+              AND metric_name = ? AND SOURCE = ?
                 {event_filter}
               AND available_time <= ?
             {order_clause}
