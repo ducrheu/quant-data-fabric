@@ -25,3 +25,11 @@ class TushareConnector:
             records.append(record)
 
         return records
+
+    def fetch(self, ts_code: str, start_date: str, end_date: str):
+        """流水线协议方法：参数形状由本方法签名定义。"""
+        return self.fetch_income(
+            ts_code=ts_code,
+            start_date=start_date,
+            end_date=end_date,
+        )

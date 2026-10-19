@@ -1,12 +1,10 @@
 import json
-from src.repositories.ingest_batch import IngestBatchRepository
 from pydantic import BaseModel
-from src.connectors.tushare_connector import TushareConnector
-from src.domain.raw import RawRecord
-from src.normalizers.financial import TushareFinancialNormalizer
-from src.repositories.financial import FinancialRepository
-from src.validators.financial import validate_income_raw
+
 from src.domain.financial import SaveOutcome
+from src.repositories.ingest_batch import IngestBatchRepository
+from src.validators.financial import validate_income_raw
+
 
 class IngestResult(BaseModel):
     total: int = 0
@@ -17,44 +15,47 @@ class IngestResult(BaseModel):
     batch_id: int | None = None
     errors: list[str] = []
 
+
 class FinancialPipeline:
+    """财务摄入流水线：取数 → 校验 → 映射 → 落库。
+
+    参数形状**由 connector 的 fetch() 定义**，流水线只按顺序转发并计数。
+    这样 Tushare（日频区间）和 baostock（季频单点）共用同一份逻辑。
+    """
+
     def __init__(
         self,
-        connector: TushareConnector,
-        normalizer: TushareFinancialNormalizer,
-        repository: FinancialRepository,
+        connector,
+        normalizer,
+        repository,
         batch_repository: IngestBatchRepository | None = None,
+        validator=None,
+        source: str = "tushare",
+        api_name: str = "income",
     ):
         self.connector = connector
         self.normalizer = normalizer
         self.repository = repository
         self.batch_repository = batch_repository
+        self.validator = validator or validate_income_raw
+        self.source = source
+        self.api_name = api_name
 
-    def run(
-        self,
-        ts_code: str,
-        start_date: str,
-        end_date: str,
-    ) -> IngestResult:
+    def run(self, **params) -> IngestResult:
         result = IngestResult()
 
-
         if self.batch_repository is not None:
-            params = json.dumps(
-                {"ts_code": ts_code, "start_date": start_date, "end_date": end_date},
-                ensure_ascii = False,
+            result.batch_id = self.batch_repository.start(
+                self.source,
+                self.api_name,
+                json.dumps(params, ensure_ascii=False, default=str),
             )
-            result.batch_id = self.batch_repository.start("tushare", "income", params)
 
-        raw_records = self.connector.fetch_income(
-            ts_code = ts_code,
-            start_date = start_date,
-            end_date = end_date,
-        )
+        raw_records = self.connector.fetch(**params)
         result.total = len(raw_records)
 
         for index, raw in enumerate(raw_records):
-            errors = validate_income_raw(raw)
+            errors = self.validator(raw)
 
             if errors:
                 result.failed += 1
@@ -76,11 +77,11 @@ class FinancialPipeline:
             self.batch_repository.finish(
                 result.batch_id,
                 status,
-                total = result.total,
-                saved = result.saved,
-                restated = result.restated,
-                skipped = result.skipped,
-                failed = result.failed,
+                total=result.total,
+                saved=result.saved,
+                restated=result.restated,
+                skipped=result.skipped,
+                failed=result.failed,
             )
 
         return result

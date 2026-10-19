@@ -33,3 +33,7 @@ class BaostockFinancialConnector:
                 )
             )
         return records
+
+    def fetch(self, code: str, year: int, quarter: int):
+        """流水线协议方法：参数形状由本方法签名定义。"""
+        return self.fetch_profit(code=code, year=year, quarter=quarter)

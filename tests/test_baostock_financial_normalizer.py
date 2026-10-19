@@ -3,9 +3,9 @@ from datetime import datetime
 import pytest
 
 from src.domain.raw import RawRecord
-from src.normalizers.baostock_financial import BaostockFinancialNormalizer, to_ts_code
+from src.normalizers.baostock_financial import BaostockFinancialNormalizer, to_ts_code, to_bs_code
 
-def test_symbol_mapping_covers_both_makers():
+def test_symbol_mapping_covers_both_markets():
     assert to_ts_code("sh.600519") == "600519.SH"
     assert to_ts_code("sz.000024") == "000024.SZ"
 
@@ -44,3 +44,9 @@ def test_normalizer_rejects_compact_date():
 
     with pytest.raises(ValueError):
         BaostockFinancialNormalizer().normalize(raw)
+
+
+def test_reverse_symbol_mapping_round_trips():
+    assert to_bs_code("600519.SH") == "sh.600519"
+    assert to_bs_code("000024.SZ") == "sz.000024"
+    assert to_ts_code(to_bs_code("600519.SH")) == "600519.SH"

@@ -19,6 +19,12 @@ def to_ts_code(bs_code:str) -> str:
     market, code = bs_code.split(".")
     return f"{code}.{market.upper()}"
 
+def to_bs_code(ts_code: str) -> str:
+    """`600519.SH` -> `sh.600519`"""
+    code, market = ts_code.split(".")
+    return f"{market.lower()}.{code}"
+
+
 class BaostockFinancialNormalizer(BaseNormalizer):
     def normalize(self, raw):
         data = raw.raw_data
