@@ -25,3 +25,6 @@ def test_collects_all_errors_at_once():
 
 def test_missing_code_is_reported():
     assert "missing code" in validate_baostock_profit_raw(make_raw(code=None))
+
+def test_good_row_has_no_errors():
+    assert validate_baostock_profit_raw(make_raw()) == []

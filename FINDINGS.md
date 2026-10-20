@@ -164,7 +164,7 @@ rank IC 在两种可信口径下都显著；多空价差在同样两种口径下
 ## 9. 复现命令
 
 ```bash
-python -m pytest -q        # 87 passed
+python -m pytest -q        # 116 passed
 python run_factor.py       # 从行情库重算因子 → data/factor.duckdb
 python run_analysis.py     # 输出本文档第 2、4 节的全部数字（三种显著口径并列）
 python run_backtest.py     # 输出第 5 节的回测与成本敏感性表（非重叠，次日开盘成交）

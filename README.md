@@ -20,7 +20,7 @@
 ## 架构
 
 ```
-数据源（Tushare）
+数据源（Tushare / Baostock）
       │
       ▼
 Connector           拉取原始数据，包装成 RawRecord
@@ -56,9 +56,10 @@ Pipeline            编排整条链路，输出处理结果
 
 | 指标 | 结果 |
 |---|---|
-| 行情/因子数据 | 124,045 行 |
+| 行情数据 | 124,045 行（300 只 × 417 个交易日） |
+| 财务数据 | 2,393 行（300 只 × 8 季，2023Q1–2024Q4） |
 | 覆盖交易日 | 417 个交易日（2025-01-02 ~ 2026-09-18） |
-| 离线测试 | 74 个（23 个测试文件，全部无需网络） |
+| 离线测试 | 117 个（31 个测试文件，全部无需网络） |
 | 可复现 demo | 2 个：`demo.py` 全链路假数据；`demo_replay.py` 真实库回放 |
 | 因子评价 | `mom_20d` 三种口径；Spearman rank IC、分位组合、多空价差 |
 | 摄入对账 | `ingest_log` 按日记录，支持断点恢复与“日志 vs 实际表”对账 |
@@ -67,15 +68,15 @@ Pipeline            编排整条链路，输出处理结果
 
 ```bash
 python demo.py          # 假数据走完整链路，打印 PIT 四条保证 + 血缘
-python demo_replay.py   # 只读打开本地 DuckDB，打印规模与摄入对账
-pytest -q               # 74 个离线测试
+python demo_replay.py   # 只读打开本地 DuckDB：行情规模 + 摄入对账 + 财务域 PIT
+pytest -q               # 117 个离线测试
 ```
 
 ## 数据域
 
 | 数据域 | 数据源接口 | 领域模型 | 数据表 |
 |---|---|---|---|
-| 财务 | Tushare `income` | `FinancialRecord` | `financial_fact` |
+| 财务 | Baostock `query_profit_data`（Tushare `income` 本账号无权限） | `FinancialRecord` | `financial_fact` |
 | 行情 | Tushare `daily`（按交易日全市场批量） | `PriceRecord` | `price_daily` |
 | 因子 | 由 `price_daily` 本地派生 | `FactorRecord` | `factor_daily` |
 
@@ -91,15 +92,16 @@ pytest -q               # 74 个离线测试
 
 股票池必须从"当时真实存在的全市场"里抽样，不能拿今天的成分股回到过去回测：
 否则已经退市、被剔除的股票会从样本里消失，收益被系统性高估（幸存者偏差）。
-除数据域之外还有两张**元数据表**：`ingest_log`（行情按日摄入账本，用于断点恢复）
-与 `ingest_batch`（每次 API 调用的血缘记录）。它们只记录"过程"，不参与研究口径。
+除数据域之外还有三张**元数据表**：`ingest_log`（行情按日摄入账本，用于断点恢复）、
+`ingest_batch`（每次 API 调用的血缘记录）与 `financial_ingest_log`（财务季频按
+`(source, code, year, quarter)` 记账，用于断点恢复）。它们只记录"过程"，不参与研究口径。
 
 ## 核心设计
 
 - **幂等**：重复摄入不会产生重复行。财务事实用「先查后写」判重（`(available_time,
   value)` 全同即判 `duplicate`），写入返回 `SaveOutcome`；行情与因子表用 `UNIQUE`
   约束 + `ON CONFLICT DO NOTHING`，写入返回实际插入行数。
-- **Revision 生命周期**：财务事实的唯一键为 `(symbol, metric_name, event_time, revision_id)`，
+- **Revision 生命周期**：财务事实的唯一键为 `(symbol, metric_name, source, event_time, revision_id)`，**来源也是事实身份的一部分**——同一报告期、同一指标、不同数据源各存各的，不会被误判为「重述」。
   同一报告期的多个版本**共存、不覆盖**。写入时仓储层先查该事实的已有版本：若
   `(available_time, value)` 完全一致则判为重复（幂等重跑），否则 `revision_id = max + 1`
   落为新版本。写入返回 `SaveOutcome`（`inserted` / `restated` / `duplicate`），流水线据此
@@ -140,17 +142,18 @@ from src.repositories.financial import FinancialRepository
 repo = FinancialRepository("data/quant_data.duckdb")
 
 # 站在 2026-05-10：2025 年报（available_time = 2026-04-30）已可见
-repo.get_pit("600519.SH", "net_income", datetime(2026, 5, 10))
+repo.get_pit("600519.SH", "net_income", "tushare", datetime(2026, 5, 10))
 # -> 800 亿
 
 # 站在披露前：同一份数据在 2026-03-01 还不存在
-repo.get_pit("600519.SH", "net_income", datetime(2026, 3, 1))
+repo.get_pit("600519.SH", "net_income", "tushare", datetime(2026, 3, 1))
 # -> None
 
 # 精确查询指定报告期
 repo.get_pit(
     "600519.SH",
     "net_income",
+    "tushare",
     datetime(2026, 5, 10),
     event_time=datetime(2025, 12, 31),
 )
@@ -168,20 +171,21 @@ repo.get_pit(
 ```
 src/
 ├── config.py          配置与密钥加载（从 .env 读取）与各数据库路径
-├── connectors/        数据接入层（Tushare 财务 / Tushare 行情 / CSV）
+├── connectors/        数据接入层（Baostock 财务 / Tushare 财务 / Tushare 行情 / CSV）
 ├── domain/            领域模型层（RawRecord / FinancialRecord / PriceRecord / FactorRecord）
 ├── normalizers/       规范化层（源字段 → 统一模型）
 ├── validators/        校验层（格式校验 + 业务校验）
-├── repositories/      存储层（财务 / 行情 / 因子 / 摄入日志 / 摄入批次）
+├── repositories/      存储层（财务 / 财务断点日志 / 行情 / 因子 / 摄入日志 / 摄入批次）
 ├── factors/           因子层（动量因子计算 + 因子评价指标 + 回测引擎）
 ├── pipelines/         编排层（串联链路并统计结果）
 ├── trading_calendar.py 交易日历快照的读写
 └── universe.py        股票池快照的读写与可复现抽样
-tests/                 单元测试与集成测试（23 个文件，无需网络）
+tests/                 单元测试与集成测试（31 个文件，无需网络）
 demo.py                离线演示入口：假数据走完整链路，演示 PIT 四条保证 + 数据血缘（5 段）
 demo_replay.py         真实库回放：只读打开本地 DuckDB，打印规模与摄入对账
 run_universe.py        构建参考数据快照（股票池 + 交易日历，需要网络与 token）
 run_ingest.py          按交易日摄入全市场行情（需要网络与 token，支持断点恢复）
+run_financial_backfill.py  用 Baostock 回填财务季频数据（需要网络，支持断点恢复）
 run_daily.py           旧入口：单只股票行情摄入（仅剩旧 10 只池，待清理）
 run_factor.py          从行情库计算 mom_20d 因子（本地）
 run_analysis.py        因子评价研究脚本（IC / 分位组合 / 多空价差，本地）
@@ -202,6 +206,7 @@ python demo.py            # 离线演示：假数据、零网络，演示 PIT �
 
 python run_universe.py    # 重建股票池与交易日历快照（需要网络与 token）
 python run_ingest.py 5    # 只摄入前 5 个交易日（试跑）；不带参数则摄入全部
+python run_financial_backfill.py 5   # 用 Baostock 回填 5 个财务请求（试跑）
 python run_factor.py      # 由行情库计算 mom_20d
 
 python demo_replay.py     # 回放真实库：数据规模 + 摄入对账（需先建库）
@@ -236,11 +241,21 @@ python -m pytest          # 运行全部测试，无需网络
 - 因子评价：秩相关对手算值、分位组合的分组与顺序、多空价差的符号与方向。
 - 回测引擎：调仓周期首尾相接、不重叠；成交价严格晚于信号日；换手率、Sharpe 年化、
   最大回撤、成本扣减（含"换手 × 2"）各有断言。
+- 多源财务：同一条流水线跑 Tushare 与 Baostock 两个源；同报告期、同指标、不同源**互不覆盖**。
+- 财务断点：`empty` 也算完成（未上市/无该期报告不重试）；`failed` 不算完成（下次自动重试）；
+  同一请求键覆盖而不重复。
+- 符号映射：`sh.600519` ↔ `600519.SH` 双向映射互为逆函数（往返测试）。
 - 测试隔离：每个测试使用独立临时数据库，不污染项目目录。
 
 ## 已知局限
 
-- 财务域尚未接入真实数据（Tushare `income` 接口需要 2000 积分），当前由离线假数据测试覆盖。
+- 财务域已接入真实数据：Baostock `query_profit_data`，300 只 × 8 季（2023Q1–2024Q4），
+  指标目前只有 `net_income`（单位：元；合并口径，含少数股东损益）。Tushare `income`
+  接口需要 2000 积分，本账号仍无权限。
+- Baostock **没有修订版本链**——一个 `(code, statDate)` 只有一行，因此从该源进来的
+  财务事实 `revision_id` 恒为 1，`RESTATED` 分支不会被它触发。这是数据源能力边界，不是 bug。
+- 财务披露粒度是**日**不是**时**：`available_time <= as_of` 会把披露**当日**算作可得。
+  回测若要求严格，业务上需另行约定「披露日次日生效」。
 - Revision 只实现了「重述共存」，**未实现「撤回 / 失效」**：一条数据被撤回后如何表达
   "此后不再可见"仍未定义（软删标志或作废版本），留待后续版本。
 - 血缘只做到"记录"，**尚未做成重放脚本**：按 `batch_id` 删除并重新拉取还需要一个
@@ -275,3 +290,4 @@ python -m pytest          # 运行全部测试，无需网络
 | V0.3 | 因子计算与评价、参考数据快照、按日批量摄入与断点恢复、离线与回放两个 demo | 已完成（tag `v0.3`） |
 | V0.4 | Revision 生命周期（重述共存）、数据血缘（`ingest_batch` + `batch_id`） | 已完成（tag `v0.4`） |
 | V0.5 | 非重叠回测引擎（次日开盘成交）、交易成本与敏感性 | 已完成（tag `v0.5`） |
+| V0.6 | 财务域接入 Baostock（季频）、流水线参数化、季频断点日志与回填脚本 | 已完成（tag `v0.6`） |

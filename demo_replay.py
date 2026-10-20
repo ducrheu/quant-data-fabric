@@ -7,16 +7,18 @@
     python run_universe.py     # 股票池 + 交易日历快照
     python run_ingest.py       # 按交易日摄入全市场行情
     python run_factor.py       # 由行情派生 mom_20d
+    python run_financial_backfill.py   # 用 baostock 回填财务季频数据
 
 注意：本脚本以 read_only=True 打开数据库，绝不写入。
 """
 
 import os
 import sys
+from datetime import datetime
 
 import duckdb
 
-from src.config import FACTOR_DB_PATH, PRICE_DB_PATH, PRICE_SOURCE
+from src.config import FACTOR_DB_PATH, PRICE_DB_PATH, PRICE_SOURCE, FINANCIAL_DB_PATH
 
 def connect_read_only(path):
     """只读连接：缺库时给出可执行的补救命令，而不是抛栈"""
@@ -25,6 +27,7 @@ def connect_read_only(path):
         print("  python run_universe.py")
         print("  python run_ingest.py")
         print("  python run_factor.py")
+        print("  python run_financial_backfill.py")
         sys.exit(1)
     return duckdb.connect(path, read_only=True)
 
@@ -83,8 +86,53 @@ def main():
     print("  本脚本不重复实现因子评价，避免同一个数字出现两个实现。")
 
     print()
-    print("  说明：财务域当前仍是离线假数据（Tushare income 需 2000 积分），")
-    print("       本回放只覆盖行情 + 因子。")
+    print()
+    print("=" * 64)
+    print("[4] 财务域：真实数据 + PIT 闸门")
+    print("=" * 64)
+    if not os.path.exists(FINANCIAL_DB_PATH):
+        print(f"    缺少 {FINANCIAL_DB_PATH}")
+        print("     -> 先跑 python run_financial_backfill.py")
+    else:
+        fin_con = duckdb.connect(FINANCIAL_DB_PATH, read_only=True)
+        try:
+            fact_rows, fact_symbols, fact_sources = fin_con.execute(
+                """
+                SELECT COUNT(*), COUNT(DISTINCT symbol), COUNT(DISTINCT source)
+                FROM financial_fact
+                """
+            ).fetchone()
+            first_event, last_event = fin_con.execute(
+                "SELECT MIN(event_time), MAX(event_time) FROM financial_fact"
+            ).fetchone()
+            print(f"    financial_fact: {fact_rows:,} 行 / {fact_symbols} 只 / {fact_sources} 个源")
+            print(f"    报告期范围    : {first_event:%Y-%m-%d} ~ {last_event:%Y-%m-%d}")
+
+            print("     实例000551.SZ net_income (2024  年报， 2025-04-08 披露)：")
+            for label, as_of in (
+                ("披露前", datetime(2025, 4, 7)),
+                ("披露后", datetime(2025, 4, 8)),
+            ):
+                row = fin_con.execute(
+                    """
+                    SELECT value, available_time
+                    FROM financial_fact
+                    WHERE symbol = ?
+                      AND metric_name = ?
+                      AND source = ?
+                      AND event_time = ?
+                      AND available_time <= ?
+                    ORDER BY available_time DESC, revision_id DESC LIMIT 1
+                    """,
+                    ["000551.SZ", "net_income", "baostock", datetime(2024, 12, 31), as_of],
+                ).fetchone()
+                if row is None:
+                    shown = "None(当时不可得) "
+                else:
+                    shown = f"{row[0]:,.0f} 元 (available_time={row[1]:%Y-%m-%d}) "
+                print(f"        as_of {as_of:%Y-%m-%d} {label} -> {shown}")
+        finally:
+            fin_con.close()
 
     price_con.close()
     factor_con.close()

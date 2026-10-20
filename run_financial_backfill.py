@@ -32,8 +32,8 @@ RETRY_WAIT_SECONDS = 2
 QUOTA_MARKERS = ("频率", "权限", "积分", "登录", "网络")
 
 # 回填计划：改这两行就是改规模
-YEARS = [2024]
-QUARTERS = [4]
+YEARS = [2023, 2024]
+QUARTERS = [1, 2, 3, 4]
 
 QUARTER_END = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}
 
