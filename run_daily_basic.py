@@ -24,7 +24,8 @@ from src.repositories.ingest_log import IngestLogRepository
 from src.trading_calendar import load_trading_days, to_date
 from src.universe import load_universe
 
-SOURCE = "tushare.daily_basic"
+SOURCE = "tushare"                  # 写入数据行的来源（提供方）
+LOG_SOURCE = "tushare.daily_basic"  # 摄入账本的键（按 API 区分，与历史一致）
 REQUEST_INTERVAL_SECONDS = 62
 MAX_ATTEMPTS = 3
 RETRY_WAIT_SECONDS = 62

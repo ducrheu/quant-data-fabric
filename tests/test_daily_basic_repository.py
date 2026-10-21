@@ -46,3 +46,26 @@ def test_save_many_tolerates_missing_values(repository):
     inserted = repository.save_many([make_record(pe_ttm=None, pb=None)])
 
     assert inserted == 1
+
+def test_same_day_different_source_coexist(repository):
+    """同一天同一支票、两个源：各存各的，不互相覆盖"""
+    inserted = repository.save_many([
+        make_record(source="tushare"),
+        make_record(source="baostock"),
+    ])
+
+    rows = repository.con.execute(
+        "SELECT source FROM daily_basic ORDER BY source"
+    ).fetchall()
+
+    assert inserted == 2
+    assert rows == [("baostock",), ("tushare",)]
+
+def test_same_source_return_is_idempotent(repository):
+    repository.save_many([make_record(source="baostock")])
+
+    second = repository.save_many([make_record(source="baostock")])
+    count = repository.con.execute("SELECT COUNT(*) FROM daily_basic").fetchone()[0]
+
+    assert second == 0
+    assert count == 1

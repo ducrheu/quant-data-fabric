@@ -1,4 +1,9 @@
-"""每日基础指标的存储层"""
+"""每日基础指标的存储层。
+
+身份是 (symbol, trade_time, source)：同一天、同一只票、不同数据源各存各的。
+**任何读取都必须显式指定 source**——不指定就会同时读到多套数据。
+本层目前没有读方法；将来加 get_* 时，source 必须是必填参数，不要给默认值。
+"""
 
 import duckdb
 
@@ -26,7 +31,7 @@ class DailyBasicRepository:
             pb DOUBLE,
             source VARCHAR NOT NULL,
                 
-            UNIQUE (symbol, trade_time)
+            UNIQUE (symbol, trade_time, source)
             )
             """
         )
